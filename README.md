@@ -45,7 +45,7 @@ This script will:
 7. Your bot starts running!
 
 Each instance runs in its own Docker container with the naming pattern:
-`ccxt-delta-neutral-[COIN]-[NUMBER]`
+`ccxt-delta-neutral-[coin]-[number]` (lowercase)
 
 ---
 
@@ -180,7 +180,7 @@ chmod +x market_maker_manager.sh
 
 **Bot stops placing orders**
 - Check if you have sufficient balance in both currencies
-- Look at logs: `docker logs ccxt-delta-neutral-[COIN]-[NUMBER]`
+- Look at logs: `docker logs ccxt-delta-neutral-[coin]-[number]`
 - Ensure minimum order size requirements are met
 
 **"Address already in use" error**
@@ -191,7 +191,7 @@ chmod +x market_maker_manager.sh
 
 1. Check the logs first:
    - Use the management script option "Check logs"
-   - Or run: `docker logs ccxt-delta-neutral-[COIN]-[NUMBER]`
+   - Or run: `docker logs ccxt-delta-neutral-[coin]-[number]`
 
 2. Check your balances:
    - Ensure you have funds in both currencies
@@ -211,13 +211,13 @@ If you need to manage instances manually:
 docker ps -a | grep ccxt-delta-neutral
 
 # Stop an instance
-docker stop ccxt-delta-neutral-ATOM-1
+docker stop ccxt-delta-neutral-atom-1
 
 # Remove an instance
-docker rm ccxt-delta-neutral-ATOM-1
+docker rm ccxt-delta-neutral-atom-1
 
 # View live logs
-docker logs -f ccxt-delta-neutral-ATOM-1
+docker logs -f ccxt-delta-neutral-atom-1
 ```
 
 ## 📝 License

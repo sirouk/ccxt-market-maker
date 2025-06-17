@@ -98,7 +98,8 @@ check_api_key_usage() {
 
 # Function to get existing instances
 get_existing_instances() {
-    docker ps -a --format "{{.Names}}" | grep "^${PREFIX}-" | sort
+    # Docker containers use lowercase names
+    docker ps -a --format "{{.Names}}" | grep -E "^${PREFIX}-[a-z0-9]+-[0-9]+$" | sort
 }
 
 # Function to display instance details
@@ -111,11 +112,12 @@ display_instance_details() {
     echo -e "${BLUE}Status:${NC} $status"
     echo -e "${BLUE}Created:${NC} $created"
     
-    # Extract coin and instance number from name
-    local coin=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+    # Extract coin and instance number from name (coin is lowercase in Docker)
+    local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+    local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
     local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
     
-    # Show config file location
+    # Show config file location (uses uppercase coin name)
     local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
     if [ -f "$config_file" ]; then
         echo -e "${BLUE}Config:${NC} $config_file"
@@ -170,8 +172,9 @@ manage_instance() {
                     docker stop "$instance" 2>/dev/null
                     docker rm "$instance"
                     
-                    # Extract coin and instance number
-                    local coin=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                    # Extract coin and instance number (coin is lowercase in Docker)
+                    local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                    local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
                     local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
                     
                     # Remove config and data files
@@ -184,8 +187,9 @@ manage_instance() {
                 fi
                 ;;
             5)
-                # Extract coin and instance number
-                local coin=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                # Extract coin and instance number (coin is lowercase in Docker)
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
                 local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
                 local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
                 
@@ -316,13 +320,16 @@ create_new_instance() {
         return
     fi
     
-    # Find next instance number
+    # Find next instance number (check lowercase version for Docker)
     instance_num=1
-    while docker ps -a --format "{{.Names}}" | grep -q "^${PREFIX}-${coin}-${instance_num}$"; do
+    coin_lower=$(echo "$coin" | tr '[:upper:]' '[:lower:]')
+    while docker ps -a --format "{{.Names}}" | grep -q "^${PREFIX}-${coin_lower}-${instance_num}$"; do
         ((instance_num++))
     done
     
     instance_name="${PREFIX}-${coin}-${instance_num}"
+    # Docker requires lowercase names
+    instance_name_lower="${PREFIX}-$(echo $coin | tr '[:upper:]' '[:lower:]')-${instance_num}"
     
     # Create directories
     mkdir -p "$CONFIG_DIR"
@@ -356,14 +363,19 @@ EOF
     
     # Create docker-compose file for this instance
     compose_file="${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+    
+    # Get absolute paths for volumes
+    config_file_abs=$(pwd)/${config_file}
+    data_dir_abs=$(pwd)/${DATA_DIR}/${coin}-${instance_num}
+    
     cat > "$compose_file" << EOF
 services:
-  ${instance_name}:
-    build: .
-    container_name: ${instance_name}
+  ${instance_name_lower}:
+    build: $(pwd)
+    container_name: ${instance_name_lower}
     volumes:
-      - ${config_file}:/app/config.yaml:ro
-      - ${DATA_DIR}/${coin}-${instance_num}:/app/data
+      - ${config_file_abs}:/app/config.yaml:ro
+      - ${data_dir_abs}:/app/data
     restart: on-failure:3
     tty: true
     stdin_open: true
@@ -379,7 +391,7 @@ EOF
     echo -e "${GREEN}=== Success! ===${NC}"
     echo
     echo "Your market maker bot is now running!"
-    echo -e "${BLUE}Instance name:${NC} ${instance_name}"
+    echo -e "${BLUE}Instance name:${NC} ${instance_name_lower}"
     echo -e "${BLUE}Trading pair:${NC} ${symbol}"
     echo -e "${BLUE}Config file:${NC} ${config_file}"
     echo -e "${BLUE}Logs:${NC} ${DATA_DIR}/${coin}-${instance_num}/market_maker.log"
@@ -391,7 +403,7 @@ EOF
     echo "• Maintain your target inventory ratio"
     echo
     echo "You can check the logs with:"
-    echo -e "${YELLOW}docker logs ${instance_name}${NC}"
+    echo -e "${YELLOW}docker logs ${instance_name_lower}${NC}"
     echo
     echo -e "${YELLOW}Press Enter to return to main menu...${NC}"
     read
