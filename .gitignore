@@ -1,0 +1,38 @@
+# Configuration files with API credentials
+config.yaml
+configs/
+*.yaml
+!config.yaml.example
+
+# Data and logs
+data/
+*.db
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.env
+venv/
+ENV/
+env/
+.venv
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.backup 

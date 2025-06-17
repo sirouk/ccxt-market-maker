@@ -1,0 +1,21 @@
+# Exchange API credentials (IMPORTANT: replace with your actual API credentials)
+api:
+  key: "YOUR_API_KEY_HERE"
+  secret: "YOUR_API_SECRET_HERE"
+
+# Database and logging
+storage:
+  db_path: "data/market_maker.db"
+  log_file: "data/market_maker.log"
+
+# Bot configuration
+bot_config:
+  exchange_id: "latoken"
+  symbol: "ATOM/USDT"  # Trading pair
+  grid_levels: 3  # Number of orders on each side
+  grid_spread: 0.0005  # 0.05% distance between levels
+  min_order_size: 0.1  # Minimum order size in base currency
+  max_position: 0.5  # Maximum position in base currency
+  polling_interval: 8.0  # How often to check prices (seconds)
+  target_inventory_ratio: 0.5  # Target 50% in base, 50% in quote
+  inventory_tolerance: 0.1  # Acceptable deviation from target 

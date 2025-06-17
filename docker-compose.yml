@@ -1,0 +1,14 @@
+services:
+  market-maker-0l:
+    build: .
+    container_name: market-maker-0l
+    volumes:
+      # Mount config file and persist database and logs
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    restart: on-failure:3
+    # Enable interactive terminal for graceful shutdown with Ctrl+C
+    tty: true
+    stdin_open: true
+    # Give more time for graceful shutdown
+    stop_grace_period: 60s
