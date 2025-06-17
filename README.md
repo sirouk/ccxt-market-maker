@@ -187,6 +187,13 @@ chmod +x market_maker_manager.sh
 - Another instance might be using the same configuration
 - Stop other instances or use different ports
 
+**Docker build fails with "Temporary failure in name resolution"**
+- This is a Docker DNS issue. Try these solutions:
+  1. Run the network fix script: `./docker_network_fix.sh`
+  2. Restart Docker: `sudo systemctl restart docker`
+  3. Build with host network: `docker build --network=host -t market-maker .`
+  4. Check if you're behind a corporate firewall/proxy
+
 ### Getting Help
 
 1. Check the logs first:

@@ -385,7 +385,21 @@ EOF
     # Start the instance
     echo
     echo -e "${YELLOW}Starting market maker for ${symbol}...${NC}"
-    docker compose -f "$compose_file" up -d --build
+    
+    # Try to build with host network if DNS issues occur
+    if ! docker compose -f "$compose_file" build; then
+        echo -e "${YELLOW}Build failed, trying with host network mode...${NC}"
+        docker compose -f "$compose_file" build --build-arg BUILDKIT_PROGRESS=plain --no-cache --progress=plain
+        
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Build failed. Trying alternative method...${NC}"
+            cd $(dirname "$compose_file")
+            docker build --network=host -t ${instance_name_lower} $(pwd)/..
+            cd - > /dev/null
+        fi
+    fi
+    
+    docker compose -f "$compose_file" up -d
     
     echo
     echo -e "${GREEN}=== Success! ===${NC}"
