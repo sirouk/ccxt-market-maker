@@ -1,8 +1,21 @@
-# Market Maker Bot
+# Delta-Neutral Market Maker Bot
 
-This is a market-making trading bot for cryptocurrency exchanges, using CCXT.
+A market-making bot that provides liquidity on centralized exchanges (CEXs) using a delta-neutral strategy to improve order book depth and user experience.
 
-## 🚀 Quick Start (Recommended for Beginners)
+## What This Does
+
+This bot:
+- **Provides Liquidity**: Places buy and sell orders around the market price to improve order book depth
+- **Delta-Neutral Strategy**: Maintains a balanced inventory between base and quote currencies to minimize directional risk
+- **Improves Trading UX**: Creates tighter spreads and better liquidity for traders on the exchange
+- **Automated Rebalancing**: Adjusts order sizes to maintain your target inventory ratio
+
+Perfect for:
+- Exchange partners providing liquidity
+- Traders wanting to earn from spreads while minimizing directional exposure
+- Projects looking to improve liquidity for their tokens
+
+## 🚀 Quick Start (Recommended)
 
 The easiest way to get started is using our interactive setup script:
 
@@ -11,41 +24,20 @@ The easiest way to get started is using our interactive setup script:
 ```
 
 This script will:
-- ✅ Automatically install Docker and other prerequisites
-- ✅ Guide you through setting up your first market maker instance
-- ✅ Help you manage multiple trading pairs
-- ✅ Provide easy access to logs and instance management
-- ✅ Prevent duplicate API Public Keys for the same coin
-
-### What the Script Does
-
-1. **First Run**: Checks and installs prerequisites (Docker, ufw-docker)
-2. **Main Menu**: Shows all your running market maker instances
-3. **New Instance Setup**: 
-   - Explains what market making is
-   - Asks for your trading pair (e.g., ATOM/USDT)
-   - Collects your LAToken API credentials
-   - Helps you configure trading parameters
-   - Calculates funding requirements
-   - Starts your market maker bot
-4. **Instance Management**:
-   - Check logs
-   - Restart instances
-   - Stop instances
-   - Delete instances (with confirmation)
+- ✅ Automatically install Docker and prerequisites
+- ✅ Guide you through setting up your market maker
+- ✅ Help manage multiple trading pairs
+- ✅ Handle all the technical details for you
 
 ### Quick Example
 
-1. Run the script: `./market_maker_manager.sh`
+1. Run: `./market_maker_manager.sh`
 2. Choose "Create new instance"
 3. Enter your coin (e.g., "ATOM")
-4. Enter your API Public Key and API Private Key from LAToken
+4. Enter your LAToken API credentials
 5. Use default settings or customize
 6. Fund your account as instructed
-7. Your bot starts running!
-
-Each instance runs in its own Docker container with the naming pattern:
-`ccxt-delta-neutral-[coin]-[number]` (lowercase)
+7. Your bot starts providing liquidity!
 
 ---
 
@@ -53,185 +45,97 @@ Each instance runs in its own Docker container with the naming pattern:
 
 ### Account Funding
 
-**IMPORTANT**: Before running the bot, you must fund your exchange account with both currencies of the trading pair.
+**IMPORTANT**: You must fund your exchange account with both currencies before starting.
 
-For optimal performance, fund your account with a balance that matches your `target_inventory_ratio` setting:
-
-**Example for ATOM/USDT with 50% target inventory ratio:**
-- Deposit 50% of your trading capital in ATOM
-- Deposit 50% of your trading capital in USDT
-
-**Example for ETH/USDT with 30% target inventory ratio:**
-- Deposit 30% of your trading capital in ETH
-- Deposit 70% of your trading capital in USDT
-
-**Why this matters:**
-- The bot needs both currencies to place buy and sell orders
-- Starting with the target ratio minimizes initial rebalancing
-- Insufficient funds in either currency will prevent order placement
-- The bot will automatically adjust order sizes based on available balances
+The bot maintains a target ratio between currencies (default 50/50):
+- **ATOM/USDT with 50% ratio**: Fund with 50% ATOM, 50% USDT value
+- **ETH/USDT with 30% ratio**: Fund with 30% ETH, 70% USDT value
 
 **Minimum Requirements:**
-- Enough base currency (e.g., ATOM) to place at least one sell order of `min_order_size`
-- Enough quote currency (e.g., USDT) to place at least one buy order of `min_order_size` at current market prices
-- Consider trading fees (typically 0.1-0.2%) when calculating minimum balances
-
-## Quick Start
-
-1. **Fund your exchange account** (see Prerequisites above)
-
-2. Configure your settings in `config.yaml`
-   - Fill in your API credentials
-   - Adjust trading parameters as needed
-
-3. Create a data directory for persistence
-   ```
-   mkdir -p data
-   ```
-
-4. Run with docker compose (one-liner):
-   ```
-   docker compose up --build
-   ```
-
-5. To run in the background:
-   ```
-   docker compose up -d --build
-   ```
-
-6. To stop:
-   ```
-   docker compose down
-   ```
+- Enough base currency for at least one sell order
+- Enough quote currency for at least one buy order
+- Account for trading fees (typically 0.1-0.2%)
 
 ## Configuration
 
-**Note**: The bot runs in Docker host network mode for reliability. This means:
-- The bot uses your host's network directly (avoids Docker DNS issues)
-- Port conflicts are possible if you run multiple services on the same ports
-- Works seamlessly on all platforms without network configuration
+Key parameters in `config.yaml`:
 
-Edit `config.yaml` to customize:
-- API credentials
-- Trading parameters:
-  - Trading pair (symbol)
-  - Grid levels and spread
-  - Order sizes
-  - Polling interval
-  - Inventory management settings
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `symbol` | Trading pair (e.g., ATOM/USDT) | ATOM/USDT |
+| `grid_levels` | Number of orders on each side | 3 |
+| `grid_spread` | % distance between price levels | 0.0005 (0.05%) |
+| `min_order_size` | Minimum order size | 0.1 |
+| `max_position` | Maximum position size | 0.5 |
+| `target_inventory_ratio` | Target balance ratio (0.5 = 50/50) | 0.5 |
+| `inventory_tolerance` | Acceptable deviation from target | 0.1 |
+| `polling_interval` | Update frequency (seconds) | 8.0 |
 
-## Parameter Glossary
+### How It Works
 
-| Parameter | Description |
-|-----------|-------------|
-| `grid_levels` | Number of price levels on each side of the mid-price. Higher values create more orders with wider price coverage. |
-| `grid_spread` | Percentage distance between each grid level. For example, 0.001 means each level is 0.1% away from the next level. |
-| `min_order_size` | Minimum order size in base currency (e.g., ETH in ETH/USDT). Orders smaller than this won't be placed. |
-| `max_position` | Maximum total position size in base currency. Limits the bot's exposure to price movements. |
-| `polling_interval` | How often (in seconds) the bot checks prices and adjusts orders. Lower values make the bot more responsive but may hit API rate limits. |
-| `target_inventory_ratio` | Desired ratio of base currency value to total portfolio value. 0.5 means aiming for 50% in base currency, 50% in quote currency. |
-| `inventory_tolerance` | Acceptable deviation from target inventory ratio before the bot starts adjusting order sizes. E.g., 0.1 with target of 0.5 means acceptable range is 0.4-0.6. |
+1. **Grid Trading**: Places orders at multiple price levels above and below market price
+2. **Inventory Management**: Automatically adjusts order sizes to maintain target ratio
+3. **Continuous Rebalancing**: As orders fill, new ones are placed to maintain liquidity
 
-### Inventory Management
+Example with default settings:
+- Places 3 buy orders below market price
+- Places 3 sell orders above market price
+- Each level is 0.05% apart
+- Adjusts sizes to maintain 50/50 inventory balance
 
-The bot uses `target_inventory_ratio` and `inventory_tolerance` to maintain a balanced portfolio:
+## Manual Setup
 
-- When your inventory has too much base currency (e.g., ETH):
-  - Sell orders are increased in size
-  - Buy orders are reduced in size
+If you prefer manual setup over the script:
 
-- When your inventory has too little base currency:
-  - Buy orders are increased in size
-  - Sell orders are reduced in size
+```bash
+# 1. Configure
+cp config.yaml.example config.yaml
+# Edit config.yaml with your API credentials
 
-This helps to naturally rebalance your portfolio through trading activity.
+# 2. Build and run
+docker compose up -d --build
 
-## Logs and Data
+# 3. Check logs
+docker logs -f market-maker-0l
 
-Logs and database are stored in the `./data` directory which is mounted as a volume in the container.
+# 4. Stop
+docker compose down
+```
 
-## ⚠️ Important Risks and Disclaimers
+## Important Notes
 
-### Trading Risks
-- **Market Risk**: Cryptocurrency prices can be extremely volatile. You may lose money.
-- **Inventory Risk**: The bot maintains positions in both currencies, exposing you to price movements.
-- **Technical Risk**: Software bugs, network issues, or exchange problems could cause losses.
-- **Liquidity Risk**: In thin markets, you may not be able to exit positions quickly.
+- **Network Mode**: Uses Docker host network for reliability
+- **Data Storage**: Logs and database stored in `./data/`
+- **Multiple Instances**: Each coin pair runs in its own container
+- **Risk Management**: Always start with small amounts to test
 
-### Best Practices
-- Start with small amounts to test the bot
-- Monitor your bot regularly, especially in the first few days
-- Set appropriate `max_position` limits to control risk
-- Ensure you understand the fee structure of LAToken
+## ⚠️ Risks
+
+- **Market Risk**: Prices can move against your inventory
+- **Technical Risk**: Software/network issues can cause losses
+- **Exchange Risk**: API issues or exchange problems
+- **Liquidity Risk**: May be difficult to exit positions in thin markets
+
+**Best Practices:**
+- Start small and monitor closely
+- Set appropriate `max_position` limits
+- Understand exchange fee structure
 - Never invest more than you can afford to lose
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
-### Common Issues
+**Common Issues:**
 
-**"Permission denied" when running the script**
+- **"Permission denied"**: Run `chmod +x market_maker_manager.sh`
+- **"Cannot connect"**: Check API credentials and permissions
+- **"Insufficient balance"**: Ensure you funded both currencies
+- **Container stopped**: Check logs with management script
+
+**View Logs:**
 ```bash
-chmod +x market_maker_manager.sh
+docker logs ccxt-delta-neutral-[coin]-[number]
 ```
 
-**"Docker daemon is not running"**
-- On Linux: `sudo systemctl start docker`
-- On Mac/Windows: Start Docker Desktop application
-
-**"Cannot connect to exchange"**
-- Check your API Public Key and API Private Key are correct
-- Ensure your API Public Key has trading permissions enabled
-- Check if LAToken is accessible from your location
-
-**Bot stops placing orders**
-- Check if you have sufficient balance in both currencies
-- Look at logs: `docker logs ccxt-delta-neutral-[coin]-[number]`
-- Ensure minimum order size requirements are met
-
-**"Address already in use" error**
-- Another instance might be using the same configuration
-- Stop other instances or use different ports
-
-**Docker build fails**
-- The bot uses host network mode by default to avoid DNS issues
-- If build still fails:
-  1. Restart Docker Desktop (macOS/Windows) or Docker daemon (Linux)
-  2. Check if you're behind a corporate firewall/proxy
-  3. Ensure you have a stable internet connection
-
-### Getting Help
-
-1. Check the logs first:
-   - Use the management script option "Check logs"
-   - Or run: `docker logs ccxt-delta-neutral-[coin]-[number]`
-
-2. Check your balances:
-   - Ensure you have funds in both currencies
-   - Account for trading fees
-
-3. Verify API credentials:
-   - Make sure API Public Key is active
-   - Check trading permissions are enabled
-   - Ensure API Public Key isn't rate-limited
-
-### Manual Commands
-
-If you need to manage instances manually:
-
-```bash
-# List all instances
-docker ps -a | grep ccxt-delta-neutral
-
-# Stop an instance
-docker stop ccxt-delta-neutral-atom-1
-
-# Remove an instance
-docker rm ccxt-delta-neutral-atom-1
-
-# View live logs
-docker logs -f ccxt-delta-neutral-atom-1
-```
-
-## 📝 License
+## License
 
 This software is provided as-is. Use at your own risk. Always test with small amounts first.
