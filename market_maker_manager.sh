@@ -102,6 +102,30 @@ get_existing_instances() {
     docker ps -a --format "{{.Names}}" | grep -E "^${PREFIX}-[a-z0-9]+-[0-9]+$" | sort
 }
 
+# Function to detect orphaned data/configs
+detect_orphaned_data() {
+    local orphaned=()
+    
+    # Check config files
+    for config_file in "$CONFIG_DIR"/*-config.yaml; do
+        if [ -f "$config_file" ]; then
+            # Extract coin and instance number from filename
+            local basename=$(basename "$config_file")
+            local coin=$(echo "$basename" | sed -n 's/\(.*\)-[0-9]*-config.yaml/\1/p')
+            local instance_num=$(echo "$basename" | sed -n 's/.*-\([0-9]*\)-config.yaml/\1/p')
+            
+            # Check if corresponding container exists (with lowercase)
+            local expected_container="${PREFIX}-$(echo $coin | tr '[:upper:]' '[:lower:]')-${instance_num}"
+            
+            if ! docker ps -a --format "{{.Names}}" | grep -q "^${expected_container}$"; then
+                orphaned+=("${coin}-${instance_num}")
+            fi
+        fi
+    done
+    
+    echo "${orphaned[@]}"
+}
+
 # Function to display instance details
 display_instance_details() {
     local instance=$1
@@ -132,6 +156,120 @@ display_instance_details() {
 manage_instance() {
     local instance=$1
     
+    # Check if container is stopped or has issues
+    local container_status=$(docker inspect -f '{{.State.Status}}' "$instance" 2>/dev/null)
+    local exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$instance" 2>/dev/null)
+    
+    # If container is not running, offer recovery options
+    if [ "$container_status" != "running" ]; then
+        echo
+        echo -e "${YELLOW}Container ${instance} is not running!${NC}"
+        echo -e "${BLUE}Status:${NC} $container_status"
+        if [ -n "$exit_code" ] && [ "$exit_code" != "0" ]; then
+            echo -e "${RED}Exit code:${NC} $exit_code"
+        fi
+        echo
+        echo "What would you like to do?"
+        echo "1) Try to restart with existing data"
+        echo "2) Start fresh (wipe data, keep config)"
+        echo "3) Remove container only (keep data and config)"
+        echo "4) Remove everything (container, data, and config)"
+        echo "5) View recent logs to diagnose issue"
+        echo "6) Back to main menu"
+        
+        read -p "Enter your choice (1-6): " recovery_choice
+        
+        case $recovery_choice in
+            1)
+                echo -e "${YELLOW}Attempting to restart container...${NC}"
+                docker start "$instance"
+                if [ $? -eq 0 ]; then
+                    echo -e "${GREEN}Container restarted successfully!${NC}"
+                else
+                    echo -e "${RED}Failed to restart. Check logs for details.${NC}"
+                fi
+                sleep 2
+                ;;
+            2)
+                # Extract coin and instance number
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                
+                echo -e "${YELLOW}Removing old container and data...${NC}"
+                docker stop "$instance" 2>/dev/null
+                docker rm "$instance" 2>/dev/null
+                
+                # Wipe data directory
+                rm -rf "${DATA_DIR}/${coin}-${instance_num}"
+                mkdir -p "${DATA_DIR}/${coin}-${instance_num}"
+                
+                # Rebuild and start
+                local compose_file="${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+                if [ -f "$compose_file" ]; then
+                    echo -e "${YELLOW}Rebuilding and starting fresh...${NC}"
+                    docker compose -f "$compose_file" up -d --build
+                    if [ $? -eq 0 ]; then
+                        echo -e "${GREEN}Container started fresh successfully!${NC}"
+                    else
+                        echo -e "${RED}Failed to start. Try manual build with: docker build --network=host .${NC}"
+                    fi
+                else
+                    echo -e "${RED}Compose file not found!${NC}"
+                fi
+                sleep 3
+                ;;
+            3)
+                echo -e "${YELLOW}Removing container only...${NC}"
+                docker rm "$instance"
+                echo -e "${GREEN}Container removed. Data and config preserved.${NC}"
+                echo -e "${BLUE}To recreate, use 'Create new instance' with the same coin.${NC}"
+                sleep 3
+                return
+                ;;
+            4)
+                # Extract coin and instance number
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                
+                read -p "Are you sure you want to remove EVERYTHING? (yes/no): " confirm
+                if [ "$confirm" = "yes" ]; then
+                    echo -e "${YELLOW}Removing container, data, and config...${NC}"
+                    docker rm "$instance" 2>/dev/null
+                    rm -rf "${DATA_DIR}/${coin}-${instance_num}"
+                    rm -f "${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                    rm -f "${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+                    echo -e "${GREEN}Everything removed!${NC}"
+                    sleep 2
+                    return
+                fi
+                ;;
+            5)
+                echo -e "\n${BLUE}Recent logs:${NC}"
+                docker logs --tail 100 "$instance"
+                echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                read
+                manage_instance "$instance"  # Go back to recovery menu
+                return
+                ;;
+            6)
+                return
+                ;;
+            *)
+                echo -e "${RED}Invalid choice!${NC}"
+                sleep 1
+                manage_instance "$instance"  # Go back to recovery menu
+                return
+                ;;
+        esac
+        
+        # After recovery action, show the regular menu
+        manage_instance "$instance"
+        return
+    fi
+    
+    # Regular menu for running containers
     while true; do
         echo
         display_instance_details "$instance"
@@ -423,6 +561,160 @@ EOF
     read
 }
 
+# Function to manage orphaned configurations
+manage_orphaned_config() {
+    local orphan_id=$1
+    local coin=$(echo "$orphan_id" | cut -d'-' -f1)
+    local instance_num=$(echo "$orphan_id" | cut -d'-' -f2)
+    
+    echo
+    echo -e "${YELLOW}Orphaned Configuration: ${coin}-${instance_num}${NC}"
+    echo -e "${BLUE}Config file:${NC} ${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+    echo -e "${BLUE}Data directory:${NC} ${DATA_DIR}/${coin}-${instance_num}"
+    
+    # Check if data directory exists
+    if [ -d "${DATA_DIR}/${coin}-${instance_num}" ]; then
+        local data_size=$(du -sh "${DATA_DIR}/${coin}-${instance_num}" 2>/dev/null | cut -f1)
+        echo -e "${BLUE}Data size:${NC} ${data_size:-unknown}"
+    fi
+    
+    # Show trading pair from config
+    if [ -f "${CONFIG_DIR}/${coin}-${instance_num}-config.yaml" ]; then
+        local symbol=$(grep "symbol:" "${CONFIG_DIR}/${coin}-${instance_num}-config.yaml" | awk '{print $2}' | tr -d '"')
+        echo -e "${BLUE}Trading Pair:${NC} ${symbol}"
+    fi
+    
+    echo
+    echo "What would you like to do?"
+    echo "1) Recreate container with existing data"
+    echo "2) Recreate container with fresh data"
+    echo "3) Delete configuration only"
+    echo "4) Delete everything (config and data)"
+    echo "5) View configuration"
+    echo "6) Back to main menu"
+    
+    read -p "Enter your choice (1-6): " choice
+    
+    case $choice in
+        1)
+            echo -e "${YELLOW}Recreating container with existing data...${NC}"
+            
+            # Check if compose file exists, create if needed
+            local compose_file="${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+            if [ ! -f "$compose_file" ]; then
+                echo -e "${YELLOW}Recreating docker-compose file...${NC}"
+                
+                # Get absolute paths
+                local config_file_abs=$(pwd)/${CONFIG_DIR}/${coin}-${instance_num}-config.yaml
+                local data_dir_abs=$(pwd)/${DATA_DIR}/${coin}-${instance_num}
+                local instance_name_lower="${PREFIX}-$(echo $coin | tr '[:upper:]' '[:lower:]')-${instance_num}"
+                
+                cat > "$compose_file" << EOF
+services:
+  ${instance_name_lower}:
+    build: $(pwd)
+    container_name: ${instance_name_lower}
+    volumes:
+      - ${config_file_abs}:/app/config.yaml:ro
+      - ${data_dir_abs}:/app/data
+    restart: on-failure:3
+    tty: true
+    stdin_open: true
+    stop_grace_period: 60s
+EOF
+            fi
+            
+            docker compose -f "$compose_file" up -d --build
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}Container recreated successfully!${NC}"
+            else
+                echo -e "${RED}Failed to recreate container. Try manual build.${NC}"
+            fi
+            sleep 3
+            ;;
+        2)
+            echo -e "${YELLOW}Recreating container with fresh data...${NC}"
+            
+            # Remove old data
+            rm -rf "${DATA_DIR}/${coin}-${instance_num}"
+            mkdir -p "${DATA_DIR}/${coin}-${instance_num}"
+            
+            # Recreate compose file if needed
+            local compose_file="${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+            if [ ! -f "$compose_file" ]; then
+                # Same as option 1, create compose file
+                local config_file_abs=$(pwd)/${CONFIG_DIR}/${coin}-${instance_num}-config.yaml
+                local data_dir_abs=$(pwd)/${DATA_DIR}/${coin}-${instance_num}
+                local instance_name_lower="${PREFIX}-$(echo $coin | tr '[:upper:]' '[:lower:]')-${instance_num}"
+                
+                cat > "$compose_file" << EOF
+services:
+  ${instance_name_lower}:
+    build: $(pwd)
+    container_name: ${instance_name_lower}
+    volumes:
+      - ${config_file_abs}:/app/config.yaml:ro
+      - ${data_dir_abs}:/app/data
+    restart: on-failure:3
+    tty: true
+    stdin_open: true
+    stop_grace_period: 60s
+EOF
+            fi
+            
+            docker compose -f "$compose_file" up -d --build
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}Container recreated with fresh data!${NC}"
+            else
+                echo -e "${RED}Failed to recreate container. Try manual build.${NC}"
+            fi
+            sleep 3
+            ;;
+        3)
+            read -p "Delete configuration files only? (yes/no): " confirm
+            if [ "$confirm" = "yes" ]; then
+                rm -f "${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                rm -f "${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+                echo -e "${GREEN}Configuration files deleted. Data preserved in ${DATA_DIR}/${coin}-${instance_num}${NC}"
+                sleep 2
+            fi
+            ;;
+        4)
+            read -p "Delete everything (config and data)? (yes/no): " confirm
+            if [ "$confirm" = "yes" ]; then
+                rm -f "${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                rm -f "${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
+                rm -rf "${DATA_DIR}/${coin}-${instance_num}"
+                echo -e "${GREEN}Everything deleted!${NC}"
+                sleep 2
+            fi
+            ;;
+        5)
+            local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+            if [ -f "$config_file" ]; then
+                echo -e "\n${BLUE}Configuration:${NC}"
+                echo -e "${YELLOW}(API credentials are partially hidden for security)${NC}\n"
+                
+                # Display config with masked API credentials
+                cat "$config_file" | sed -E 's/(key:.*")(.{4}).*(.{4})(".*)/\1\2****\3\4/; s/(secret:.*")(.{4}).*(.{4})(".*)/\1\2****\3\4/'
+                
+                echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                read
+            else
+                echo -e "${RED}Configuration file not found!${NC}"
+                sleep 2
+            fi
+            ;;
+        6)
+            return
+            ;;
+        *)
+            echo -e "${RED}Invalid choice!${NC}"
+            sleep 2
+            ;;
+    esac
+}
+
 # Main menu
 main_menu() {
     while true; do
@@ -433,29 +725,78 @@ main_menu() {
         # Get existing instances
         instances=($(get_existing_instances))
         
-        if [ ${#instances[@]} -gt 0 ]; then
+        # Check for orphaned data
+        orphaned=($(detect_orphaned_data))
+        
+        if [ ${#instances[@]} -gt 0 ] || [ ${#orphaned[@]} -gt 0 ]; then
             echo "Existing instances:"
             echo
             for i in "${!instances[@]}"; do
                 local status=$(docker ps -a --filter "name=^${instances[$i]}$" --format "{{.Status}}")
-                echo "$((i+1))) ${instances[$i]} - $status"
+                local state=$(docker inspect -f '{{.State.Status}}' "${instances[$i]}" 2>/dev/null)
+                local exit_code=$(docker inspect -f '{{.State.ExitCode}}' "${instances[$i]}" 2>/dev/null)
+                
+                # Color code based on status
+                if [ "$state" = "running" ]; then
+                    echo -e "$((i+1))) ${GREEN}${instances[$i]}${NC} - $status"
+                elif [ "$state" = "exited" ] && [ "$exit_code" != "0" ]; then
+                    echo -e "$((i+1))) ${RED}${instances[$i]}${NC} - $status ${RED}(needs attention)${NC}"
+                else
+                    echo -e "$((i+1))) ${YELLOW}${instances[$i]}${NC} - $status"
+                fi
             done
-            echo
-            echo "$((${#instances[@]}+1))) Create new instance"
-            echo "$((${#instances[@]}+2))) Exit"
+            
+            # Show orphaned data if any
+            if [ ${#orphaned[@]} -gt 0 ]; then
+                echo
+                echo -e "${YELLOW}Orphaned configurations (no container):${NC}"
+                local orphan_start=$((${#instances[@]}+1))
+                for i in "${!orphaned[@]}"; do
+                    echo -e "$((orphan_start+i))) ${YELLOW}${orphaned[$i]}${NC} - ${BLUE}[Config & Data Only]${NC}"
+                done
+                
+                echo
+                echo "$((orphan_start+${#orphaned[@]}))) Create new instance"
+                echo "$((orphan_start+${#orphaned[@]}+1))) Exit"
+            else
+                echo
+                echo "$((${#instances[@]}+1))) Create new instance"
+                echo "$((${#instances[@]}+2))) Exit"
+            fi
             
             read -p "Enter your choice: " choice
             
             if [ "$choice" -ge 1 ] && [ "$choice" -le ${#instances[@]} ]; then
                 manage_instance "${instances[$((choice-1))]}"
-            elif [ "$choice" -eq $((${#instances[@]}+1)) ]; then
-                create_new_instance
-            elif [ "$choice" -eq $((${#instances[@]}+2)) ]; then
-                echo -e "${GREEN}Goodbye!${NC}"
-                exit 0
+            elif [ ${#orphaned[@]} -gt 0 ]; then
+                # Handle orphaned data choices
+                local orphan_start=$((${#instances[@]}+1))
+                local orphan_end=$((orphan_start+${#orphaned[@]}-1))
+                
+                if [ "$choice" -ge "$orphan_start" ] && [ "$choice" -le "$orphan_end" ]; then
+                    # Manage orphaned config
+                    local orphan_index=$((choice-orphan_start))
+                    manage_orphaned_config "${orphaned[$orphan_index]}"
+                elif [ "$choice" -eq $((orphan_start+${#orphaned[@]})) ]; then
+                    create_new_instance
+                elif [ "$choice" -eq $((orphan_start+${#orphaned[@]}+1)) ]; then
+                    echo -e "${GREEN}Goodbye!${NC}"
+                    exit 0
+                else
+                    echo -e "${RED}Invalid choice!${NC}"
+                    sleep 2
+                fi
             else
-                echo -e "${RED}Invalid choice!${NC}"
-                sleep 2
+                # No orphaned data
+                if [ "$choice" -eq $((${#instances[@]}+1)) ]; then
+                    create_new_instance
+                elif [ "$choice" -eq $((${#instances[@]}+2)) ]; then
+                    echo -e "${GREEN}Goodbye!${NC}"
+                    exit 0
+                else
+                    echo -e "${RED}Invalid choice!${NC}"
+                    sleep 2
+                fi
             fi
         else
             echo "No existing instances found."
