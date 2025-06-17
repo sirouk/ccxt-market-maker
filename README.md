@@ -144,3 +144,82 @@ This helps to naturally rebalance your portfolio through trading activity.
 ## Logs and Data
 
 Logs and database are stored in the `./data` directory which is mounted as a volume in the container.
+
+## ⚠️ Important Risks and Disclaimers
+
+### Trading Risks
+- **Market Risk**: Cryptocurrency prices can be extremely volatile. You may lose money.
+- **Inventory Risk**: The bot maintains positions in both currencies, exposing you to price movements.
+- **Technical Risk**: Software bugs, network issues, or exchange problems could cause losses.
+- **Liquidity Risk**: In thin markets, you may not be able to exit positions quickly.
+
+### Best Practices
+- Start with small amounts to test the bot
+- Monitor your bot regularly, especially in the first few days
+- Set appropriate `max_position` limits to control risk
+- Ensure you understand the fee structure of LAToken
+- Never invest more than you can afford to lose
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"Permission denied" when running the script**
+```bash
+chmod +x market_maker_manager.sh
+```
+
+**"Docker daemon is not running"**
+- On Linux: `sudo systemctl start docker`
+- On Mac/Windows: Start Docker Desktop application
+
+**"Cannot connect to exchange"**
+- Check your API credentials are correct
+- Ensure your API key has trading permissions enabled
+- Check if LAToken is accessible from your location
+
+**Bot stops placing orders**
+- Check if you have sufficient balance in both currencies
+- Look at logs: `docker logs ccxt-delta-neutral-[COIN]-[NUMBER]`
+- Ensure minimum order size requirements are met
+
+**"Address already in use" error**
+- Another instance might be using the same configuration
+- Stop other instances or use different ports
+
+### Getting Help
+
+1. Check the logs first:
+   - Use the management script option "Check logs"
+   - Or run: `docker logs ccxt-delta-neutral-[COIN]-[NUMBER]`
+
+2. Check your balances:
+   - Ensure you have funds in both currencies
+   - Account for trading fees
+
+3. Verify API credentials:
+   - Make sure API key is active
+   - Check trading permissions are enabled
+   - Ensure API key isn't rate-limited
+
+### Manual Commands
+
+If you need to manage instances manually:
+
+```bash
+# List all instances
+docker ps -a | grep ccxt-delta-neutral
+
+# Stop an instance
+docker stop ccxt-delta-neutral-ATOM-1
+
+# Remove an instance
+docker rm ccxt-delta-neutral-ATOM-1
+
+# View live logs
+docker logs -f ccxt-delta-neutral-ATOM-1
+```
+
+## 📝 License
+
+This software is provided as-is. Use at your own risk. Always test with small amounts first.
