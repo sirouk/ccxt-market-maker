@@ -1,6 +1,7 @@
 from datetime import datetime
 import sqlite3
 from typing import Union
+import os
 
 from _types import OrderRecord, TradeData
 from custom_logger import LoggerSetup
@@ -8,6 +9,12 @@ from custom_logger import LoggerSetup
 class DatabaseManager:
     def __init__(self, db_path: str = "market_maker.db", log_file: str = "market_maker.log"):
         self.logger = LoggerSetup.setup_logger('DatabaseManager', log_file)
+        
+        # Create directory for database if it doesn't exist
+        db_dir = os.path.dirname(db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            
         self.conn = sqlite3.connect(db_path)
         self.create_tables()
 

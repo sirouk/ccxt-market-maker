@@ -1,5 +1,6 @@
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
 
 class LoggerSetup:
@@ -31,6 +32,11 @@ class LoggerSetup:
         formatter = logging.Formatter(
             '%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
         )
+
+        # Create directory for log file if it doesn't exist
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
 
         # File handler with rotation
         file_handler = RotatingFileHandler(
