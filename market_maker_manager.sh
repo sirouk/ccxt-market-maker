@@ -22,11 +22,7 @@ fi
 install_prerequisites() {
     # Check if Docker is installed
     if ! command -v docker &> /dev/null; then
-        echo -e "${YELLOW}Docker not found. Installing Docker and dependencies...${NC}"
-        
-        # Install dependencies
-        sudo apt update > /dev/null 2>&1
-        sudo apt install -y jq curl nginx-full certbot python3-certbot-nginx > /dev/null 2>&1
+        echo -e "${YELLOW}Docker not found. Installing Docker...${NC}"
         
         # Install Docker
         curl -fsSL https://get.docker.com | bash > /dev/null 2>&1
@@ -41,7 +37,7 @@ install_prerequisites() {
         sudo ufw-docker install > /dev/null 2>&1
         sudo ufw reload > /dev/null 2>&1
         
-        echo -e "${GREEN}Docker and dependencies installed successfully!${NC}"
+        echo -e "${GREEN}Docker installed successfully!${NC}"
         echo -e "${YELLOW}Note: You may need to log out and back in for docker group changes to take effect.${NC}"
         
         # Check if user needs to re-login for docker group
