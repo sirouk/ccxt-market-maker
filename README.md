@@ -19,7 +19,7 @@ This script will:
 
 ### What the Script Does
 
-1. **First Run**: Checks and installs prerequisites (Docker, docker-compose, ufw-docker)
+1. **First Run**: Checks and installs prerequisites (Docker, ufw-docker)
 2. **Main Menu**: Shows all your running market maker instances
 3. **New Instance Setup**: 
    - Explains what market making is
