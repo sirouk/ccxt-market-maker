@@ -120,9 +120,10 @@ manage_instance() {
         echo "2) Restart"
         echo "3) Stop"
         echo "4) Delete (including data)"
-        echo "5) Back to main menu"
+        echo "5) View configuration"
+        echo "6) Back to main menu"
         
-        read -p "Enter your choice (1-5): " choice
+        read -p "Enter your choice (1-6): " choice
         
         case $choice in
             1)
@@ -164,6 +165,26 @@ manage_instance() {
                 fi
                 ;;
             5)
+                # Extract coin and instance number
+                local coin=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                
+                if [ -f "$config_file" ]; then
+                    echo -e "\n${BLUE}Configuration for ${instance}:${NC}"
+                    echo -e "${YELLOW}(API credentials are partially hidden for security)${NC}\n"
+                    
+                    # Display config with masked API credentials
+                    cat "$config_file" | sed -E 's/(key:.*")(.{4}).*(.{4})(".*)/\1\2****\3\4/; s/(secret:.*")(.{4}).*(.{4})(".*)/\1\2****\3\4/'
+                    
+                    echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                    read
+                else
+                    echo -e "${RED}Configuration file not found!${NC}"
+                    sleep 2
+                fi
+                ;;
+            6)
                 return
                 ;;
             *)
