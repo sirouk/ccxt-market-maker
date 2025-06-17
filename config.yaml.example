@@ -1,7 +1,7 @@
 # Exchange API credentials (IMPORTANT: replace with your actual API credentials)
 api:
-  key: "YOUR_API_KEY_HERE"
-  secret: "YOUR_API_SECRET_HERE"
+  key: "YOUR_API_PUBLIC_KEY_HERE"
+  secret: "YOUR_API_PRIVATE_KEY_HERE"
 
 # Database and logging
 storage:

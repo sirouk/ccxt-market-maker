@@ -20,6 +20,20 @@ fi
 
 # Function to install prerequisites silently
 install_prerequisites() {
+    # Check if bc is installed (needed for calculations)
+    if ! command -v bc &> /dev/null; then
+        echo -e "${YELLOW}Installing bc calculator...${NC}"
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update > /dev/null 2>&1
+            sudo apt-get install -y bc > /dev/null 2>&1
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y bc > /dev/null 2>&1
+        elif command -v brew &> /dev/null; then
+            brew install bc > /dev/null 2>&1
+        fi
+        echo -e "${GREEN}bc installed successfully!${NC}"
+    fi
+    
     # Check if Docker is installed
     if ! command -v docker &> /dev/null; then
         echo -e "${YELLOW}Docker not found. Installing Docker...${NC}"
@@ -245,17 +259,17 @@ create_new_instance() {
     echo
     echo -e "${YELLOW}API Credentials:${NC}"
     echo "You can find these in your LAToken account settings."
-    echo "Make sure to enable trading permissions for your API key."
+    echo "Make sure to enable trading permissions for your API Public Key."
     echo
     
-    read -p "Enter your API key: " api_key
-    read -s -p "Enter your API secret: " api_secret
+    read -p "Enter your API Public Key: " api_key
+    read -s -p "Enter your API Private Key: " api_secret
     echo
     
     # Check if API key is already used for this coin
     if check_api_key_usage "$api_key" "$coin"; then
-        echo -e "\n${RED}Error: This API key is already being used for ${coin}!${NC}"
-        echo "Each coin should have a unique API key or use different instances."
+        echo -e "\n${RED}Error: This API Public Key is already being used for ${coin}!${NC}"
+        echo "Each coin should have a unique API Public Key or use different instances."
         echo -e "${YELLOW}Press Enter to return to main menu...${NC}"
         read
         return

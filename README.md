@@ -15,7 +15,7 @@ This script will:
 - ✅ Guide you through setting up your first market maker instance
 - ✅ Help you manage multiple trading pairs
 - ✅ Provide easy access to logs and instance management
-- ✅ Prevent duplicate API keys for the same coin
+- ✅ Prevent duplicate API Public Keys for the same coin
 
 ### What the Script Does
 
@@ -39,7 +39,7 @@ This script will:
 1. Run the script: `./market_maker_manager.sh`
 2. Choose "Create new instance"
 3. Enter your coin (e.g., "ATOM")
-4. Enter your API credentials from LAToken
+4. Enter your API Public Key and API Private Key from LAToken
 5. Use default settings or customize
 6. Fund your account as instructed
 7. Your bot starts running!
@@ -174,8 +174,8 @@ chmod +x market_maker_manager.sh
 - On Mac/Windows: Start Docker Desktop application
 
 **"Cannot connect to exchange"**
-- Check your API credentials are correct
-- Ensure your API key has trading permissions enabled
+- Check your API Public Key and API Private Key are correct
+- Ensure your API Public Key has trading permissions enabled
 - Check if LAToken is accessible from your location
 
 **Bot stops placing orders**
@@ -198,9 +198,9 @@ chmod +x market_maker_manager.sh
    - Account for trading fees
 
 3. Verify API credentials:
-   - Make sure API key is active
+   - Make sure API Public Key is active
    - Check trading permissions are enabled
-   - Ensure API key isn't rate-limited
+   - Ensure API Public Key isn't rate-limited
 
 ### Manual Commands
 
