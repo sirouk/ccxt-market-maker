@@ -208,11 +208,22 @@ manage_instance() {
                 local compose_file="${CONFIG_DIR}/${coin}-${instance_num}-docker-compose.yml"
                 if [ -f "$compose_file" ]; then
                     echo -e "${YELLOW}Rebuilding and starting fresh...${NC}"
-                    docker compose -f "$compose_file" up -d --build
+                    
+                    # Try to build with fallback options
+                    local instance_name_lower="${PREFIX}-${coin_lower}-${instance_num}"
+                    if ! docker compose -f "$compose_file" build; then
+                        echo -e "${YELLOW}Build failed, trying with host network mode...${NC}"
+                        cd $(dirname "$compose_file")
+                        docker build --network=host -t ${instance_name_lower} ..
+                        cd - > /dev/null
+                    fi
+                    
+                    docker compose -f "$compose_file" up -d
                     if [ $? -eq 0 ]; then
                         echo -e "${GREEN}Container started fresh successfully!${NC}"
                     else
-                        echo -e "${RED}Failed to start. Try manual build with: docker build --network=host .${NC}"
+                        echo -e "${RED}Failed to start.${NC}"
+                        echo -e "${YELLOW}Try manual build: docker build --network=host -t ${instance_name_lower} .${NC}"
                     fi
                 else
                     echo -e "${RED}Compose file not found!${NC}"
@@ -624,11 +635,20 @@ services:
 EOF
             fi
             
-            docker compose -f "$compose_file" up -d --build
+            # Try to build with fallback options
+            if ! docker compose -f "$compose_file" build; then
+                echo -e "${YELLOW}Build failed, trying with host network mode...${NC}"
+                cd $(dirname "$compose_file")
+                docker build --network=host -t ${instance_name_lower} ..
+                cd - > /dev/null
+            fi
+            
+            docker compose -f "$compose_file" up -d
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}Container recreated successfully!${NC}"
             else
-                echo -e "${RED}Failed to recreate container. Try manual build.${NC}"
+                echo -e "${RED}Failed to recreate container.${NC}"
+                echo -e "${YELLOW}Try manual build: docker build --network=host -t ${instance_name_lower} .${NC}"
             fi
             sleep 3
             ;;
@@ -662,11 +682,20 @@ services:
 EOF
             fi
             
-            docker compose -f "$compose_file" up -d --build
+            # Try to build with fallback options
+            if ! docker compose -f "$compose_file" build; then
+                echo -e "${YELLOW}Build failed, trying with host network mode...${NC}"
+                cd $(dirname "$compose_file")
+                docker build --network=host -t ${instance_name_lower} ..
+                cd - > /dev/null
+            fi
+            
+            docker compose -f "$compose_file" up -d
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}Container recreated with fresh data!${NC}"
             else
-                echo -e "${RED}Failed to recreate container. Try manual build.${NC}"
+                echo -e "${RED}Failed to recreate container.${NC}"
+                echo -e "${YELLOW}Try manual build: docker build --network=host -t ${instance_name_lower} .${NC}"
             fi
             sleep 3
             ;;
