@@ -89,19 +89,19 @@ For optimal performance, fund your account with a balance that matches your `tar
    mkdir -p data
    ```
 
-4. Run with docker-compose (one-liner):
+4. Run with docker compose (one-liner):
    ```
-   docker-compose up --build
+   docker compose up --build
    ```
 
 5. To run in the background:
    ```
-   docker-compose up -d --build
+   docker compose up -d --build
    ```
 
 6. To stop:
    ```
-   docker-compose down
+   docker compose down
    ```
 
 ## Configuration

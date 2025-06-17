@@ -22,29 +22,38 @@ fi
 install_prerequisites() {
     # Check if Docker is installed
     if ! command -v docker &> /dev/null; then
-        echo -e "${YELLOW}Docker not found. Installing Docker...${NC}"
-        curl -fsSL https://get.docker.com -o get-docker.sh > /dev/null 2>&1
-        sudo sh get-docker.sh > /dev/null 2>&1
-        rm get-docker.sh
+        echo -e "${YELLOW}Docker not found. Installing Docker and dependencies...${NC}"
+        
+        # Install dependencies
+        sudo apt update > /dev/null 2>&1
+        sudo apt install -y jq curl nginx-full certbot python3-certbot-nginx > /dev/null 2>&1
+        
+        # Install Docker
+        curl -fsSL https://get.docker.com | bash > /dev/null 2>&1
         
         # Add current user to docker group
         sudo usermod -aG docker $USER
-        echo -e "${GREEN}Docker installed successfully!${NC}"
+        
+        # Install ufw-docker for firewall rules (only on fresh Docker install)
+        echo -e "${YELLOW}Setting up UFW-Docker...${NC}"
+        sudo wget -q -O /usr/local/bin/ufw-docker https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
+        sudo chmod +x /usr/local/bin/ufw-docker
+        sudo ufw-docker install > /dev/null 2>&1
+        sudo ufw reload > /dev/null 2>&1
+        
+        echo -e "${GREEN}Docker and dependencies installed successfully!${NC}"
         echo -e "${YELLOW}Note: You may need to log out and back in for docker group changes to take effect.${NC}"
-    fi
-
-    # Check if docker-compose is installed
-    if ! command -v docker-compose &> /dev/null; then
-        echo -e "${YELLOW}Installing docker-compose...${NC}"
-        sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose > /dev/null 2>&1
-        sudo chmod +x /usr/local/bin/docker-compose
-        echo -e "${GREEN}docker-compose installed successfully!${NC}"
-    fi
-
-    # Install ufw-docker for firewall rules (if ufw is installed)
-    if command -v ufw &> /dev/null; then
-        if [ ! -f /usr/local/bin/ufw-docker ]; then
-            echo -e "${YELLOW}Setting up UFW-Docker...${NC}"
+        
+        # Check if user needs to re-login for docker group
+        if ! groups | grep -q docker; then
+            echo
+            echo -e "${YELLOW}Please log out and back in, then run this script again.${NC}"
+            exit 0
+        fi
+    else
+        # Check if ufw-docker is installed (in case Docker was already present)
+        if command -v ufw &> /dev/null && [ ! -f /usr/local/bin/ufw-docker ]; then
+            echo -e "${YELLOW}Installing UFW-Docker for existing Docker installation...${NC}"
             sudo wget -q -O /usr/local/bin/ufw-docker https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
             sudo chmod +x /usr/local/bin/ufw-docker
             sudo ufw-docker install > /dev/null 2>&1
@@ -354,7 +363,7 @@ EOF
     # Start the instance
     echo
     echo -e "${YELLOW}Starting market maker for ${symbol}...${NC}"
-    docker-compose -f "$compose_file" up -d --build
+    docker compose -f "$compose_file" up -d --build
     
     echo
     echo -e "${GREEN}=== Success! ===${NC}"
@@ -440,14 +449,6 @@ main_menu() {
 # Main execution
 echo -e "${BLUE}Checking prerequisites...${NC}"
 install_prerequisites
-
-# Check if user needs to re-login for docker group
-if ! groups | grep -q docker; then
-    echo
-    echo -e "${YELLOW}Note: You've been added to the docker group.${NC}"
-    echo -e "${YELLOW}Please log out and back in, then run this script again.${NC}"
-    exit 0
-fi
 
 # Create necessary directories
 mkdir -p "$CONFIG_DIR"
