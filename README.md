@@ -106,6 +106,11 @@ For optimal performance, fund your account with a balance that matches your `tar
 
 ## Configuration
 
+**Note**: The bot runs in Docker host network mode for reliability. This means:
+- The bot uses your host's network directly (avoids Docker DNS issues)
+- Port conflicts are possible if you run multiple services on the same ports
+- Works seamlessly on all platforms without network configuration
+
 Edit `config.yaml` to customize:
 - API credentials
 - Trading parameters:
@@ -187,15 +192,12 @@ chmod +x market_maker_manager.sh
 - Another instance might be using the same configuration
 - Stop other instances or use different ports
 
-**Docker build fails with DNS/network issues**
-- Common errors: "Temporary failure in name resolution" or "Read-only file system"
-- Solutions in order of preference:
+**Docker build fails**
+- The bot uses host network mode by default to avoid DNS issues
+- If build still fails:
   1. Restart Docker Desktop (macOS/Windows) or Docker daemon (Linux)
-  2. Build with host network: `docker build --network=host -t market-maker .`
-  3. Use alternative Dockerfile: `docker build --network=host -f Dockerfile.hostnet -t market-maker .`
-  4. Run the network fix script: `./docker_network_fix.sh`
-  5. Check if you're behind a corporate firewall/proxy
-  6. The management script automatically tries host network mode if standard build fails
+  2. Check if you're behind a corporate firewall/proxy
+  3. Ensure you have a stable internet connection
 
 ### Getting Help
 

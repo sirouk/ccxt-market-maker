@@ -1,7 +1,10 @@
 services:
   market-maker-0l:
-    build: .
+    build: 
+      context: .
+      network: host
     container_name: market-maker-0l
+    network_mode: host
     volumes:
       # Mount config file and persist database and logs
       - ./config.yaml:/app/config.yaml:ro
