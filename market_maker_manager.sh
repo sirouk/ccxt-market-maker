@@ -73,7 +73,7 @@ install_prerequisites() {
     fi
 }
 
-# Function to check if API key is already in use for a coin
+# Function to check if API key is already in use for a specific coin
 check_api_key_usage() {
     local api_key=$1
     local coin=$2
@@ -85,15 +85,16 @@ check_api_key_usage() {
             config_coin=$(basename "$config_file" | sed -n 's/\(.*\)-[0-9]*-config.yaml/\1/p')
             
             # Extract API key from config (be careful with special characters)
-            config_api_key=$(grep -A1 "^api:" "$config_file" | grep "key:" | sed 's/.*key:.*"\(.*\)".*/\1/')
+            config_api_key=$(grep -A2 "^api:" "$config_file" | grep "key:" | sed 's/.*key:.*"\(.*\)".*/\1/')
             
+            # Only return true if SAME API key is used for SAME coin
             if [ "$config_api_key" = "$api_key" ] && [ "$config_coin" = "$coin" ]; then
-                return 0  # API key already used for this coin
+                return 0  # API key already used for this specific coin
             fi
         fi
     done
     
-    return 1  # API key not used for this coin
+    return 1  # API key not used for this specific coin (different coins are OK)
 }
 
 # Function to get existing instances
@@ -197,6 +198,7 @@ manage_instance() {
                 local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
                 
                 echo -e "${YELLOW}Removing old container and data...${NC}"
+                echo -e "${BLUE}Gracefully stopping container (cancelling orders)...${NC}"
                 docker stop "$instance" 2>/dev/null
                 docker rm "$instance" 2>/dev/null
                 
@@ -299,14 +301,18 @@ manage_instance() {
                 ;;
             3)
                 echo -e "${YELLOW}Stopping instance...${NC}"
+                echo -e "${BLUE}The bot will gracefully cancel all open orders before shutting down.${NC}"
+                echo -e "${BLUE}This may take up to 60 seconds...${NC}"
                 docker stop "$instance"
-                echo -e "${GREEN}Instance stopped!${NC}"
+                echo -e "${GREEN}Instance stopped gracefully!${NC}"
+                echo -e "${GREEN}All orders have been cancelled.${NC}"
                 sleep 2
                 ;;
             4)
                 read -p "Are you sure you want to delete this instance and its data? (yes/no): " confirm
                 if [ "$confirm" = "yes" ]; then
                     echo -e "${YELLOW}Deleting instance...${NC}"
+                    echo -e "${BLUE}Gracefully stopping container (cancelling orders)...${NC}"
                     docker stop "$instance" 2>/dev/null
                     docker rm "$instance"
                     
@@ -352,6 +358,108 @@ manage_instance() {
                 echo -e "${RED}Invalid choice!${NC}"
                 ;;
         esac
+    done
+}
+
+# Function to get existing API keys from all config files
+get_existing_api_keys() {
+    local api_keys=()
+    
+    # Scan all config files
+    for config_file in "$CONFIG_DIR"/*-config.yaml; do
+        if [ -f "$config_file" ]; then
+            # Extract coin and instance number from filename
+            local basename=$(basename "$config_file")
+            local coin=$(echo "$basename" | sed -n 's/\(.*\)-[0-9]*-config.yaml/\1/p')
+            local instance_num=$(echo "$basename" | sed -n 's/.*-\([0-9]*\)-config.yaml/\1/p')
+            
+            # Extract API key, secret, and symbol from config
+            local api_key=$(grep -A2 "^api:" "$config_file" | grep "key:" | sed 's/.*key:.*"\(.*\)".*/\1/')
+            local api_secret=$(grep -A2 "^api:" "$config_file" | grep "secret:" | sed 's/.*secret:.*"\(.*\)".*/\1/')
+            local symbol=$(grep "symbol:" "$config_file" | awk '{print $2}' | tr -d '"')
+            
+            if [ -n "$api_key" ] && [ -n "$api_secret" ]; then
+                # Store as: coin|instance_num|api_key|api_secret|symbol
+                api_keys+=("${coin}|${instance_num}|${api_key}|${api_secret}|${symbol}")
+            fi
+        fi
+    done
+    
+    echo "${api_keys[@]}"
+}
+
+# Function to import API credentials from existing configs
+import_api_credentials() {
+    local new_coin=$1
+    local existing_keys=($(get_existing_api_keys))
+    
+    if [ ${#existing_keys[@]} -eq 0 ]; then
+        return 1  # No existing keys found
+    fi
+    
+    echo >&2
+    echo -e "${BLUE}=== Import API Credentials ===${NC}" >&2
+    echo -e "${YELLOW}Found existing API key pairs from other configurations:${NC}" >&2
+    echo >&2
+    
+    # Display available API keys with partial masking
+    for i in "${!existing_keys[@]}"; do
+        IFS='|' read -r coin instance_num api_key api_secret symbol <<< "${existing_keys[$i]}"
+        
+        # Check if this API key is already used for the new coin
+        local key_available=true
+        if check_api_key_usage "$api_key" "$new_coin"; then
+            key_available=false
+        fi
+        
+        # Mask API key and secret for display
+        local masked_key="${api_key:0:4}****${api_key: -4}"
+        local masked_secret="${api_secret:0:4}****${api_secret: -4}"
+        
+        if [ "$key_available" = true ]; then
+            echo -e "$((i+1))) ${GREEN}${coin}-${instance_num}${NC} (${symbol})" >&2
+            echo -e "    API Key: ${masked_key}" >&2
+            echo -e "    Secret:  ${masked_secret}" >&2
+        else
+            echo -e "$((i+1))) ${RED}${coin}-${instance_num}${NC} (${symbol}) ${RED}[Already used for ${new_coin}]${NC}" >&2
+            echo -e "    API Key: ${masked_key}" >&2
+            echo -e "    Secret:  ${masked_secret}" >&2
+        fi
+        echo >&2
+    done
+    
+    echo "$((${#existing_keys[@]}+1))) Enter new API credentials manually" >&2
+    echo >&2
+    
+    while true; do
+        read -p "Select API credentials to import (1-$((${#existing_keys[@]}+1))): " choice
+        
+        if [ "$choice" -eq $((${#existing_keys[@]}+1)) ]; then
+            return 1  # User chose to enter manually
+        elif [ "$choice" -ge 1 ] && [ "$choice" -le ${#existing_keys[@]} ]; then
+            local selected_index=$((choice-1))
+            IFS='|' read -r coin instance_num selected_api_key selected_api_secret symbol <<< "${existing_keys[$selected_index]}"
+            
+                         # Check if this API key can be used for the new coin
+             if check_api_key_usage "$selected_api_key" "$new_coin"; then
+                 echo -e "${RED}Error: This API key is already being used for another ${new_coin} instance!${NC}" >&2
+                 echo "Please select a different API key or enter new credentials." >&2
+                 echo >&2
+                 continue
+             fi
+            
+            # Confirm selection
+            echo -e "\n${YELLOW}You selected API credentials from: ${coin}-${instance_num} (${symbol})${NC}" >&2
+            read -p "Confirm this selection? (yes/no): " confirm
+            
+                         if [ "$confirm" = "yes" ]; then
+                 # Return the selected credentials (format: key|secret)
+                 echo "${selected_api_key}|${selected_api_secret}"
+                 return 0  # Success
+             fi
+        else
+            echo -e "${RED}Invalid choice! Please select 1-$((${#existing_keys[@]}+1))${NC}" >&2
+        fi
     done
 }
 
@@ -402,16 +510,66 @@ create_new_instance() {
     echo -e "${YELLOW}API Credentials:${NC}"
     echo "You can find these in your LAToken account settings."
     echo "Make sure to enable trading permissions for your API Public Key."
-    echo
     
-    read -p "Enter your API Public Key: " api_key
-    read -s -p "Enter your API Private Key: " api_secret
-    echo
+    # Check if there are existing API keys to import
+    local existing_keys=($(get_existing_api_keys))
+    local api_key=""
+    local api_secret=""
     
-    # Check if API key is already used for this coin
-    if check_api_key_usage "$api_key" "$coin"; then
-        echo -e "\n${RED}Error: This API Public Key is already being used for ${coin}!${NC}"
-        echo "Each coin should have a unique API Public Key or use different instances."
+    if [ ${#existing_keys[@]} -gt 0 ]; then
+        echo
+        echo "You have existing API credentials from other configurations."
+        echo "Would you like to:"
+        echo "1) Import existing API credentials"
+        echo "2) Enter new API credentials manually"
+        echo
+        
+        while true; do
+            read -p "Choose option (1-2): " cred_choice
+            case $cred_choice in
+                1)
+                    local import_result=$(import_api_credentials "$coin")
+                    if [ $? -eq 0 ] && [ -n "$import_result" ]; then
+                        # API credentials were successfully imported
+                        IFS='|' read -r api_key api_secret <<< "$import_result"
+                        echo -e "${GREEN}API credentials imported successfully!${NC}"
+                        echo
+                        break
+                    else
+                        # User chose to enter manually or import failed
+                        echo -e "${YELLOW}Proceeding with manual entry...${NC}"
+                        echo
+                        read -p "Enter your API Public Key: " api_key
+                        read -s -p "Enter your API Private Key: " api_secret
+                        echo
+                        break
+                    fi
+                    ;;
+                2)
+                    echo
+                    read -p "Enter your API Public Key: " api_key
+                    read -s -p "Enter your API Private Key: " api_secret
+                    echo
+                    break
+                    ;;
+                *)
+                    echo -e "${RED}Invalid choice! Please select 1 or 2.${NC}"
+                    ;;
+            esac
+        done
+    else
+        # No existing API keys, proceed with manual entry
+        echo
+        read -p "Enter your API Public Key: " api_key
+        read -s -p "Enter your API Private Key: " api_secret
+        echo
+    fi
+    
+    # Check if API key is already used for this specific coin (only if we have values)
+    if [ -n "$api_key" ] && check_api_key_usage "$api_key" "$coin"; then
+        echo -e "\n${RED}Error: This API Public Key is already being used for another ${coin} instance!${NC}"
+        echo "You cannot use the same API key for multiple instances of the same coin."
+        echo "Either use a different API key or manage the existing ${coin} instance instead."
         echo -e "${YELLOW}Press Enter to return to main menu...${NC}"
         read
         return

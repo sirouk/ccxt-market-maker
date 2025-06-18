@@ -27,6 +27,9 @@ This script will:
 - ✅ Automatically install Docker and prerequisites
 - ✅ Guide you through setting up your market maker
 - ✅ Help manage multiple trading pairs
+- ✅ Import API credentials from existing setups (no need to re-enter)
+- ✅ Smart API key management (same key works for different tokens, prevents duplicates)
+- ✅ Graceful shutdown (automatically cancels all orders when stopping)
 - ✅ Handle all the technical details for you
 
 ### Quick Example
@@ -34,10 +37,15 @@ This script will:
 1. Run: `./market_maker_manager.sh`
 2. Choose "Create new instance"
 3. Enter your coin (e.g., "ATOM")
-4. Enter your LAToken API credentials
+4. Enter your LAToken API credentials (or import from existing setup)
 5. Use default settings or customize
 6. Fund your account as instructed
 7. Your bot starts providing liquidity!
+
+**API Key Usage:**
+- ✅ **Same API key for different tokens**: ATOM/USDT + LBR/USDT (allowed)
+- ❌ **Same API key for same token twice**: ATOM-1 + ATOM-2 (prevented)
+- 💡 **Multiple trading pairs**: One API key can run many different token pairs
 
 ---
 
@@ -55,6 +63,10 @@ The bot maintains a target ratio between currencies (default 50/50):
 - Enough base currency for at least one sell order
 - Enough quote currency for at least one buy order
 - Account for trading fees (typically 0.1-0.2%)
+
+**Safety Features:**
+- 🛡️ **Graceful Shutdown**: When you stop the bot, it automatically cancels all open orders before shutting down
+- 🔄 **Smart Recovery**: Can restart from where it left off if temporarily stopped
 
 ## Configuration
 
