@@ -606,55 +606,67 @@ reconfigure_instance() {
     echo -e "${BLUE}Current symbol: ${current_symbol}${NC}"
     echo
     
-    read -p "Grid levels (number of orders on each side) [${current_grid_levels}]: " grid_levels
+    echo -e "${YELLOW}Number of buy/sell orders to place on each side of the market${NC}"
+    echo -e "${YELLOW}Current value: ${current_grid_levels}${NC}"
+    read -p "Grid levels (1-20 recommended) [${current_grid_levels}]: " grid_levels
     grid_levels=${grid_levels:-$current_grid_levels}
     
-    read -p "Grid spread (% distance between levels) [${current_grid_spread}]: " grid_spread
+    echo
+    echo -e "${YELLOW}Distance between each order level as a decimal (0.001 = 0.1%)${NC}"
+    echo -e "${YELLOW}Current value: ${current_grid_spread}${NC}"
+    read -p "Grid spread (0.0005-0.01 typical) [${current_grid_spread}]: " grid_spread
     grid_spread=${grid_spread:-$current_grid_spread}
     
-    read -p "Minimum order size in ${coin} [${current_min_order_size}]: " min_order_size
+    echo
+    echo -e "${YELLOW}Smallest order size the exchange allows for ${coin}${NC}"
+    echo -e "${YELLOW}Current value: ${current_min_order_size}${NC}"
+    read -p "Minimum order size [${current_min_order_size}]: " min_order_size
     min_order_size=${min_order_size:-$current_min_order_size}
     
-    read -p "Maximum position in ${coin} [${current_max_position}]: " max_position
+    echo
+    echo -e "${YELLOW}Maximum total ${coin} the bot can hold (risk limit)${NC}"
+    echo -e "${YELLOW}Current value: ${current_max_position}${NC}"
+    read -p "Maximum position [${current_max_position}]: " max_position
     max_position=${max_position:-$current_max_position}
     
-    read -p "Target inventory ratio (0.5 = 50% in each currency) [${current_target_ratio}]: " target_ratio
+    echo
+    echo -e "${YELLOW}Target balance ratio as decimal (0.5 = 50% ${coin}, 50% ${quote})${NC}"
+    echo -e "${YELLOW}Current value: ${current_target_ratio}${NC}"
+    read -p "Target inventory ratio (0.01-0.99) [${current_target_ratio}]: " target_ratio
     target_ratio=${target_ratio:-$current_target_ratio}
     
-    read -p "Inventory tolerance [${current_inventory_tolerance}]: " inventory_tolerance
+    echo
+    echo -e "${YELLOW}Acceptable deviation from target ratio before rebalancing${NC}"
+    echo -e "${YELLOW}Current value: ${current_inventory_tolerance}${NC}"
+    read -p "Inventory tolerance (0.01-0.5 typical) [${current_inventory_tolerance}]: " inventory_tolerance
     inventory_tolerance=${inventory_tolerance:-$current_inventory_tolerance}
     
-    read -p "Polling interval (seconds) [${current_polling_interval}]: " polling_interval
+    echo
+    echo -e "${YELLOW}How often to check market and update orders (in seconds)${NC}"
+    echo -e "${YELLOW}Current value: ${current_polling_interval}${NC}"
+    read -p "Polling interval (5-60 recommended) [${current_polling_interval}]: " polling_interval
     polling_interval=${polling_interval:-$current_polling_interval}
     
     # Advanced settings
     echo
     echo -e "${BLUE}=== Advanced Settings ===${NC}"
     
-    read -p "Max orderbook deviation (0.1 = 10%, 0 = disable) [${current_max_deviation}]: " max_deviation
+    echo
+    echo -e "${YELLOW}Filter out orders that deviate too much from market price${NC}"
+    echo -e "${YELLOW}Helps protect against extreme outlier orders (0.1 = filter >10% deviation)${NC}"
+    echo -e "${YELLOW}Current value: ${current_max_deviation}${NC}"
+    read -p "Max orderbook deviation (0 to disable) [${current_max_deviation}]: " max_deviation
     max_deviation=${max_deviation:-$current_max_deviation}
     
-    # Convert boolean to y/n for display
-    local fallback_display="y"
-    if [ "$current_pricing_fallback" = "false" ]; then
-        fallback_display="n"
-    fi
-    
-    read -p "Enable fallback pricing when all orders filtered? (y/n) [${fallback_display}]: " enable_fallback
-    enable_fallback=${enable_fallback:-$fallback_display}
+    echo
+    echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
+    echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
+    read -p "Enable fallback pricing when all orders filtered? (y/n, default y): " enable_fallback
+    enable_fallback=${enable_fallback:-y}
     out_of_range_pricing_fallback=true
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
     fi
-    
-    # Map current price mode to number for display
-    local price_mode_num=1
-    case $current_price_mode in
-        vwap) price_mode_num=1 ;;
-        nearest_bid) price_mode_num=2 ;;
-        nearest_ask) price_mode_num=3 ;;
-        auto) price_mode_num=4 ;;
-    esac
     
     echo
     echo "Out-of-range price mode (when all orders filtered):"
@@ -662,8 +674,8 @@ reconfigure_instance() {
     echo "  2. nearest_bid (Conservative for buying)"
     echo "  3. nearest_ask (Conservative for selling)"
     echo "  4. auto (Adaptive - tries all sources)"
-    read -p "Select price mode (1-4) [${price_mode_num}]: " price_mode_choice
-    price_mode_choice=${price_mode_choice:-$price_mode_num}
+    read -p "Select price mode (1-4, default 1): " price_mode_choice
+    price_mode_choice=${price_mode_choice:-1}
     
     case $price_mode_choice in
         1) out_of_range_price_mode="vwap" ;;
@@ -859,37 +871,57 @@ create_new_instance() {
     echo -e "${BLUE}=== Trading Parameters ===${NC}"
     echo
     
-    read -p "Grid levels (number of orders on each side, default: 3): " grid_levels
+    echo -e "${YELLOW}Number of buy/sell orders to place on each side of the market${NC}"
+    read -p "Grid levels (1-20 recommended, default: 3): " grid_levels
     grid_levels=${grid_levels:-3}
     
-    read -p "Grid spread (% distance between levels, default: 0.0005 = 0.05%): " grid_spread
+    echo
+    echo -e "${YELLOW}Distance between each order level as a decimal (0.001 = 0.1%)${NC}"
+    read -p "Grid spread (0.0005-0.01 typical, default: 0.0005): " grid_spread
     grid_spread=${grid_spread:-0.0005}
     
-    read -p "Minimum order size in ${coin} (default: 0.1): " min_order_size
+    echo
+    echo -e "${YELLOW}Smallest order size the exchange allows for ${coin}${NC}"
+    read -p "Minimum order size (default: 0.1): " min_order_size
     min_order_size=${min_order_size:-0.1}
     
-    read -p "Maximum position in ${coin} (default: 0.5): " max_position
+    echo
+    echo -e "${YELLOW}Maximum total ${coin} the bot can hold (risk limit)${NC}"
+    read -p "Maximum position (default: 0.5): " max_position
     max_position=${max_position:-0.5}
     
-    read -p "Target inventory ratio (0.5 = 50% in each currency, default: 0.5): " target_ratio
+    echo
+    echo -e "${YELLOW}Target balance ratio as decimal (0.5 = 50% ${coin}, 50% ${quote})${NC}"
+    read -p "Target inventory ratio (0.01-0.99, default: 0.5): " target_ratio
     target_ratio=${target_ratio:-0.5}
+    
+    echo
+    echo -e "${YELLOW}Acceptable deviation from target ratio before rebalancing${NC}"
+    read -p "Inventory tolerance (0.01-0.5 typical, default: 0.1): " inventory_tolerance
+    inventory_tolerance=${inventory_tolerance:-0.1}
     
     # Add outlier filtering parameter
     echo
     echo -e "${YELLOW}=== Advanced Settings ===${NC}"
-    echo "Some exchanges have extreme outlier orders that can distort pricing."
-    echo "The bot can filter orders that are too far from the last traded price."
     echo
-    read -p "Enter max orderbook deviation (0.1 = 10%, 0 = disable filtering, default 0.1): " max_deviation
+    echo -e "${YELLOW}Some exchanges have extreme outlier orders that can distort pricing.${NC}"
+    echo -e "${YELLOW}The bot can filter orders that are too far from the market price.${NC}"
+    echo
+    echo -e "${YELLOW}Filter threshold as decimal (0.1 = filter orders >10% from market)${NC}"
+    read -p "Max orderbook deviation (0 to disable, default: 0.1): " max_deviation
     max_deviation=${max_deviation:-0.1}
     
-    read -p "Enable fallback pricing when all orders are filtered out? (y/n, default y): " enable_fallback
+    echo
+    echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
+    echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
+    read -p "Enable fallback pricing when all orders filtered? (y/n, default y): " enable_fallback
     enable_fallback=${enable_fallback:-y}
     out_of_range_pricing_fallback=true
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
     fi
     
+    echo
     echo "Out-of-range price mode (when all orders filtered):"
     echo "  1. vwap (Volume Weighted Average Price - safest)"
     echo "  2. nearest_bid (Conservative for buying)"
@@ -971,7 +1003,7 @@ bot_config:
   max_position: ${max_position}
   polling_interval: 8.0
   target_inventory_ratio: ${target_ratio}
-  inventory_tolerance: 0.1
+  inventory_tolerance: ${inventory_tolerance}
   max_orderbook_deviation: ${max_deviation}
   out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
   out_of_range_price_mode: ${out_of_range_price_mode}
