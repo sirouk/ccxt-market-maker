@@ -22,6 +22,9 @@ class Config:
         polling_interval: float,
         target_inventory_ratio: Decimal,
         inventory_tolerance: Decimal,
+        max_orderbook_deviation: Decimal = Decimal('0.1'),  # Default 10% max deviation
+        out_of_range_pricing_fallback: bool = True,  # Enable fallback pricing when out of range
+        out_of_range_price_mode: str = 'vwap',  # Price mode when all orders filtered out
     ):
         self.api_key = api_key
         self.api_secret = api_secret
@@ -36,6 +39,9 @@ class Config:
         self.polling_interval = polling_interval
         self.target_inventory_ratio = target_inventory_ratio
         self.inventory_tolerance = inventory_tolerance
+        self.max_orderbook_deviation = max_orderbook_deviation
+        self.out_of_range_pricing_fallback = out_of_range_pricing_fallback
+        self.out_of_range_price_mode = out_of_range_price_mode
 
 
 def load_config_from_yaml() -> Optional[Config]:
@@ -88,7 +94,10 @@ def load_config_from_yaml() -> Optional[Config]:
             max_position=Decimal(str(bot_config.get('max_position', '0.5'))),
             polling_interval=float(bot_config.get('polling_interval', 30.0)),
             target_inventory_ratio=Decimal(str(bot_config.get('target_inventory_ratio', '0.5'))),
-            inventory_tolerance=Decimal(str(bot_config.get('inventory_tolerance', '0.15')))
+            inventory_tolerance=Decimal(str(bot_config.get('inventory_tolerance', '0.15'))),
+            max_orderbook_deviation=Decimal(str(bot_config.get('max_orderbook_deviation', '0.1'))),
+            out_of_range_pricing_fallback=bot_config.get('out_of_range_pricing_fallback', True),
+            out_of_range_price_mode=bot_config.get('out_of_range_price_mode', 'vwap')
         )
 
     except Exception as e:

@@ -42,6 +42,9 @@ class MarketMakerREST:
         # Detect base/quote from "ETH/USDT" format
         self.base_currency, self.quote_currency = config.symbol.split('/')
         self.market_id: Optional[str] = None
+        self.last_price: Optional[Decimal] = None  # Store last traded price
+        self.ticker_bid: Optional[Decimal] = None  # Store ticker bid price
+        self.ticker_ask: Optional[Decimal] = None  # Store ticker ask price
 
         # Initialize helper components
         self.retry_handler = RetryHandler(logger=self.logger)
@@ -76,25 +79,132 @@ class MarketMakerREST:
             raise
 
     async def fetch_and_update_orderbook(self) -> None:
-        """Retrieve the current orderbook via REST and store it in memory."""
+        """Fetch and update the orderbook, with outlier filtering if configured."""
         try:
+            # First calculate current inventory ratio for potential directional bias
+            if self.config.out_of_range_pricing_fallback:
+                try:
+                    self._last_inventory_ratio = await self.calculate_inventory_ratio()
+                except Exception as e:
+                    self.logger.warning(f"Could not calculate inventory ratio for directional bias: {e}")
+            
             ob = await self.retry_handler.retry_with_backoff(
                 self.exchange.fetch_order_book,
                 "Fetch orderbook",
                 self.config.symbol
             )
-            # 'bids' and 'asks' are lists of [price, volume]
-            self.orderbook['bids'] = SortedDict({
-                Decimal(str(b[0])): Decimal(str(b[1])) for b in ob['bids']
-            })
-            self.orderbook['asks'] = SortedDict({
-                Decimal(str(a[0])): Decimal(str(a[1])) for a in ob['asks']
-            })
+            
+            # Get reference price for filtering outliers
+            reference_price = None
+            
+            # First try to get VWAP (Volume Weighted Average Price) - most reliable
+            try:
+                ticker = self.retry_handler.retry_with_backoff(
+                    self.exchange.fetch_ticker,
+                    self.config.symbol
+                )
+                
+                # Store ticker data
+                ticker_bid = Decimal(str(ticker.get('bid', 0)))
+                ticker_ask = Decimal(str(ticker.get('ask', 0)))
+                
+                # Get VWAP as primary reference
+                vwap = ticker.get('vwap')
+                if vwap and vwap > 0:
+                    reference_price = Decimal(str(vwap))
+                    self.logger.info(f"Using VWAP for outlier filtering: {reference_price}")
+                # Fallback to ticker bid/ask mid-price if spread is reasonable
+                elif ticker_bid > 0 and ticker_ask > 0:
+                    spread_ratio = ticker_ask / ticker_bid
+                    if spread_ratio < Decimal('10'):  # Only use if spread is reasonable
+                        reference_price = (ticker_bid + ticker_ask) / Decimal('2')
+                        self.logger.info(f"Using ticker bid/ask mid-price for filtering: {reference_price} (bid: {ticker_bid}, ask: {ticker_ask})")
+                    else:
+                        self.logger.warning(f"Ticker spread too wide for filtering (ratio: {spread_ratio:.2f})")
+                
+                # Update last price and ticker values
+                last_price = ticker.get('last')
+                if last_price:
+                    self.last_price = Decimal(str(last_price))
+                
+                self.ticker_bid = ticker_bid
+                self.ticker_ask = ticker_ask
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch ticker: {e}")
+            
+            # If still no reference price, try to use existing last_price as last resort
+            if not reference_price and self.last_price:
+                reference_price = self.last_price
+                self.logger.warning(f"Using existing last price for filtering: {reference_price} (may be unreliable)")
+            
+            # If we have a valid reference price and max_orderbook_deviation is set, filter outliers
+            if reference_price and reference_price > 0 and self.config.max_orderbook_deviation > 0:
+                min_allowed_price = reference_price * (Decimal('1') - self.config.max_orderbook_deviation)
+                max_allowed_price = reference_price * (Decimal('1') + self.config.max_orderbook_deviation)
+                
+                self.logger.debug(f"Filtering orderbook with reference_price={reference_price}, "
+                                f"allowed range: {min_allowed_price} - {max_allowed_price}")
+                
+                # Filter bids and asks
+                filtered_bids = {}
+                filtered_asks = {}
+                
+                for b in ob['bids']:
+                    price = Decimal(str(b[0]))
+                    if min_allowed_price <= price <= max_allowed_price:
+                        filtered_bids[price] = Decimal(str(b[1]))
+                    else:
+                        self.logger.debug(f"Filtered out bid at {price} (outside allowed range)")
+                
+                for a in ob['asks']:
+                    price = Decimal(str(a[0]))
+                    if min_allowed_price <= price <= max_allowed_price:
+                        filtered_asks[price] = Decimal(str(a[1]))
+                    else:
+                        self.logger.debug(f"Filtered out ask at {price} (outside allowed range)")
+                
+                self.orderbook['bids'] = SortedDict(filtered_bids)
+                self.orderbook['asks'] = SortedDict(filtered_asks)
+                
+                self.logger.info(f"Orderbook filtered: {len(filtered_bids)} bids, {len(filtered_asks)} asks "
+                               f"(removed {len(ob['bids']) - len(filtered_bids)} outlier bids, "
+                               f"{len(ob['asks']) - len(filtered_asks)} outlier asks)")
+                
+                # If orderbook is empty after filtering and directional bias is enabled
+                if self.config.out_of_range_pricing_fallback and (not filtered_bids or not filtered_asks):
+                    directional_price = self.get_directional_reference_price(ob)
+                    if directional_price:
+                        # Use directional price as the reference for empty side
+                        if not filtered_bids:
+                            # Create synthetic bid slightly below directional price
+                            synthetic_bid_price = directional_price * Decimal('0.999')
+                            self.orderbook['bids'][synthetic_bid_price] = Decimal('1')
+                            self.logger.info(f"Added synthetic bid at {synthetic_bid_price} for directional rebalancing")
+                        
+                        if not filtered_asks:
+                            # Create synthetic ask slightly above directional price
+                            synthetic_ask_price = directional_price * Decimal('1.001')
+                            self.orderbook['asks'][synthetic_ask_price] = Decimal('1')
+                            self.logger.info(f"Added synthetic ask at {synthetic_ask_price} for directional rebalancing")
+            else:
+                # No filtering - use original orderbook
+                self.orderbook['bids'] = SortedDict({
+                    Decimal(str(b[0])): Decimal(str(b[1])) for b in ob['bids']
+                })
+                self.orderbook['asks'] = SortedDict({
+                    Decimal(str(a[0])): Decimal(str(a[1])) for a in ob['asks']
+                })
 
             # Debug logging for orderbook metrics
             if self.orderbook['bids'] and self.orderbook['asks']:
                 best_bid_price, best_bid_volume = self.orderbook['bids'].peekitem(-1)
                 best_ask_price, best_ask_volume = self.orderbook['asks'].peekitem(0)
+                
+                # Store best bid/ask for use in calculate_mid_price
+                self.bid_price = best_bid_price
+                self.ask_price = best_ask_price
+                
                 mid_price = (Decimal(str(best_bid_price)) + Decimal(str(best_ask_price))) / Decimal('2')
                 spread = Decimal(str(best_ask_price)) - Decimal(str(best_bid_price))
                 spread_pct = (spread / mid_price) * Decimal('100')
@@ -102,6 +212,11 @@ class MarketMakerREST:
                 self.logger.debug(f"Orderbook updated - Best bid: {best_bid_price} ({best_bid_volume}), "
                                 f"Best ask: {best_ask_price} ({best_ask_volume}), "
                                 f"Mid price: {mid_price}, Spread: {spread} ({spread_pct:.4f}%)")
+            else:
+                # Clear bid/ask if orderbook is empty
+                self.bid_price = None
+                self.ask_price = None
+                self.logger.warning("Orderbook is empty after filtering")
         except Exception as e:
             self.logger.error(f"Error fetching orderbook: {e}")
 
@@ -225,13 +340,12 @@ class MarketMakerREST:
             base_balance = await self.get_position()
             quote_balance = await self.get_quote_balance()
 
-            if not self.orderbook['bids'] or not self.orderbook['asks']:
-                self.logger.warning("Cannot calculate inventory ratio: orderbook is empty")
+            # Use the new calculate_mid_price method that prioritizes VWAP
+            mid_price = self.calculate_mid_price()
+            
+            if not mid_price:
+                self.logger.warning("No valid price for inventory ratio, using target ratio")
                 return self.config.target_inventory_ratio
-
-            best_bid_price, _ = self.orderbook['bids'].peekitem(-1)
-            best_ask_price, _ = self.orderbook['asks'].peekitem(0)
-            mid_price = (Decimal(str(best_bid_price)) + Decimal(str(best_ask_price))) / Decimal('2')
 
             base_value = base_balance * mid_price
             total_value = base_value + quote_balance
@@ -292,13 +406,24 @@ class MarketMakerREST:
     async def calculate_order_grid(self) -> List[Tuple[str, Decimal, Decimal]]:
         """Build a list of potential orders around the mid-price."""
         try:
-            if not self.orderbook['bids'] or not self.orderbook['asks']:
-                self.logger.debug("No orderbook data available for grid calculation")
+            # Use the new calculate_mid_price method that prioritizes VWAP
+            mid_price = self.calculate_mid_price()
+            
+            if not mid_price:
+                self.logger.error("Could not determine mid-price")
                 return []
-
-            best_bid_price, _ = self.orderbook['bids'].peekitem(-1)
-            best_ask_price, _ = self.orderbook['asks'].peekitem(0)
-            mid_price = (Decimal(str(best_bid_price)) + Decimal(str(best_ask_price))) / Decimal('2')
+            
+            # Sanity check: if we have a stored reference price, ensure mid_price is reasonable
+            if self.last_price and self.last_price > 0:
+                price_change_ratio = abs(mid_price - self.last_price) / self.last_price
+                if price_change_ratio > Decimal('0.5'):  # More than 50% change
+                    self.logger.warning(f"Extreme price movement detected! Mid-price: {mid_price}, Reference: {self.last_price}")
+                    self.logger.warning(f"Price change: {price_change_ratio * 100:.1f}%")
+                    
+                    # Use the more conservative price
+                    if mid_price > self.last_price * Decimal('2'):
+                        self.logger.warning(f"Using reference price {self.last_price} instead of inflated mid-price {mid_price}")
+                        mid_price = self.last_price
 
             # Get current balances to better size orders
             position = await self.get_position()
@@ -608,6 +733,246 @@ class MarketMakerREST:
             self.logger.error(f"Error closing exchange: {e}")
 
         self.logger.info("Market maker stopped.")
+
+    def calculate_mid_price(self) -> Optional[Decimal]:
+        """Calculate mid-price with multiple fallback options"""
+        # Option 1: Use orderbook mid-price if available (most reliable)
+        if hasattr(self, 'bid_price') and hasattr(self, 'ask_price') and self.bid_price and self.ask_price:
+            mid_price = (self.bid_price + self.ask_price) / Decimal('2')
+            self.logger.info(f"Using orderbook mid-price: {mid_price}")
+            return mid_price
+        
+        # If orderbook is filtered empty, check if fallback is enabled
+        if not self.config.out_of_range_pricing_fallback:
+            self.logger.warning("All orders filtered out and fallback pricing disabled")
+            return None
+            
+        # Use configured out-of-range price mode
+        price_mode = self.config.out_of_range_price_mode.lower()
+        self.logger.info(f"All orders out of range, using fallback price mode: {price_mode}")
+        
+        # Get reference price for nearest bid/ask modes
+        reference_price = None
+        try:
+            ticker = self.retry_handler.retry_with_backoff(
+                self.exchange.fetch_ticker,
+                self.config.symbol
+            )
+            vwap = ticker.get('vwap')
+            if vwap and vwap > 0:
+                reference_price = Decimal(str(vwap))
+        except Exception as e:
+            self.logger.warning(f"Failed to get reference price: {e}")
+            
+        # Option 2: Use configured price mode
+        if price_mode == 'nearest_bid':
+            if reference_price and hasattr(self, 'orderbook'):
+                nearest_bid = self.get_nearest_valid_bid(reference_price)
+                if nearest_bid:
+                    self.logger.info(f"Using nearest bid price: {nearest_bid}")
+                    return nearest_bid
+                else:
+                    self.logger.warning("No valid bid found, falling back to VWAP")
+                    
+        elif price_mode == 'nearest_ask':
+            if reference_price and hasattr(self, 'orderbook'):
+                nearest_ask = self.get_nearest_valid_ask(reference_price)
+                if nearest_ask:
+                    self.logger.info(f"Using nearest ask price: {nearest_ask}")
+                    return nearest_ask
+                else:
+                    self.logger.warning("No valid ask found, falling back to VWAP")
+        
+        elif price_mode == 'vwap':
+            # Use VWAP if available
+            if reference_price:
+                self.logger.info(f"Using VWAP: {reference_price}")
+                return reference_price
+        
+        elif price_mode == 'auto':
+            # Auto mode: Try full fallback hierarchy
+            self.logger.info("Using auto mode - trying all price sources")
+            
+            # First try VWAP
+            if reference_price:
+                self.logger.info(f"Auto mode: Using VWAP: {reference_price}")
+                return reference_price
+            
+            # Try ticker bid/ask
+            try:
+                ticker_bid = ticker.get('bid')
+                ticker_ask = ticker.get('ask')
+                if ticker_bid and ticker_ask and ticker_bid > 0 and ticker_ask > 0:
+                    ticker_bid = Decimal(str(ticker_bid))
+                    ticker_ask = Decimal(str(ticker_ask))
+                    spread_ratio = ticker_ask / ticker_bid
+                    if spread_ratio < Decimal('10'):  # Spread less than 10x
+                        mid_price = (ticker_bid + ticker_ask) / Decimal('2')
+                        self.logger.info(f"Auto mode: Using ticker bid/ask mid-price: {mid_price}")
+                        return mid_price
+                    else:
+                        self.logger.warning(f"Auto mode: Ticker spread too wide (ratio: {spread_ratio})")
+            except:
+                pass
+            
+            # Try last price
+            last_price = ticker.get('last')
+            if last_price and last_price > 0:
+                last_price = Decimal(str(last_price))
+                self.logger.warning(f"Auto mode: Using last price: {last_price}")
+                return last_price
+        
+        # Final fallback for all modes (except when explicitly handled above)
+        if price_mode != 'auto':
+            # For non-auto modes, still try fallback options
+            try:
+                ticker = self.retry_handler.retry_with_backoff(
+                    self.exchange.fetch_ticker,
+                    self.config.symbol
+                )
+                
+                # Try ticker bid/ask
+                ticker_bid = ticker.get('bid')
+                ticker_ask = ticker.get('ask')
+                if ticker_bid and ticker_ask and ticker_bid > 0 and ticker_ask > 0:
+                    ticker_bid = Decimal(str(ticker_bid))
+                    ticker_ask = Decimal(str(ticker_ask))
+                    spread_ratio = ticker_ask / ticker_bid
+                    if spread_ratio < Decimal('10'):  # Spread less than 10x
+                        mid_price = (ticker_bid + ticker_ask) / Decimal('2')
+                        self.logger.info(f"Using ticker bid/ask mid-price: {mid_price}")
+                        return mid_price
+                    else:
+                        self.logger.warning(f"Ticker spread too wide (ratio: {spread_ratio})")
+                        
+                # Last resort: use last price
+                last_price = ticker.get('last')
+                if last_price and last_price > 0:
+                    last_price = Decimal(str(last_price))
+                    self.logger.warning(f"Using last price as final fallback: {last_price}")
+                    return last_price
+                    
+            except Exception as e:
+                self.logger.error(f"Failed to calculate mid-price: {e}")
+        
+        # Try stored last_price as absolute final fallback
+        if self.last_price and self.last_price > 0:
+            self.logger.warning(f"Using stored last price: {self.last_price}")
+            return self.last_price
+            
+        self.logger.error("Could not determine any valid price")
+        return None
+
+    def get_directional_reference_price(self, ob: Dict) -> Optional[Decimal]:
+        """
+        Get reference price favoring the direction that helps inventory rebalancing.
+        When we need to buy more (low inventory), favor asks.
+        When we need to sell more (high inventory), favor bids.
+        """
+        try:
+            # First check if we have current inventory ratio
+            if not hasattr(self, '_last_inventory_ratio'):
+                self._last_inventory_ratio = self.config.target_inventory_ratio
+            
+            current_ratio = self._last_inventory_ratio
+            target_ratio = self.config.target_inventory_ratio
+            ratio_diff = current_ratio - target_ratio
+            
+            # Determine which direction to favor
+            favor_bids = ratio_diff > self.config.inventory_tolerance  # Too much base, need to sell
+            favor_asks = ratio_diff < -self.config.inventory_tolerance  # Too little base, need to buy
+            
+            if not favor_bids and not favor_asks:
+                # Within tolerance, no preference
+                return None
+            
+            # Get all bids and asks with prices
+            all_bids = [(Decimal(str(b[0])), Decimal(str(b[1]))) for b in ob.get('bids', [])]
+            all_asks = [(Decimal(str(a[0])), Decimal(str(a[1]))) for a in ob.get('asks', [])]
+            
+            if favor_bids and all_bids:
+                # Sort bids by price descending (best bid first)
+                all_bids.sort(key=lambda x: x[0], reverse=True)
+                # Return the best bid as reference
+                best_bid = all_bids[0][0]
+                self.logger.info(f"Favoring bid side for rebalancing (too much base): using {best_bid}")
+                return best_bid
+                
+            elif favor_asks and all_asks:
+                # Sort asks by price ascending (best ask first)
+                all_asks.sort(key=lambda x: x[0])
+                # Return the best ask as reference
+                best_ask = all_asks[0][0]
+                self.logger.info(f"Favoring ask side for rebalancing (too little base): using {best_ask}")
+                return best_ask
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error getting directional reference price: {e}")
+            return None
+
+    def get_nearest_valid_bid(self, reference_price: Decimal) -> Optional[Decimal]:
+        """
+        Get the nearest valid bid price within acceptable deviation.
+        Returns the highest bid that's within max_orderbook_deviation of reference price.
+        """
+        if not hasattr(self, 'orderbook') or not self.orderbook.get('bids'):
+            return None
+            
+        max_deviation = self.config.max_orderbook_deviation
+        if max_deviation <= 0:
+            # No filtering, return best bid
+            return Decimal(str(self.orderbook['bids'][0][0]))
+            
+        min_allowed = reference_price * (Decimal('1') - max_deviation)
+        max_allowed = reference_price * (Decimal('1') + max_deviation)
+        
+        # Find highest bid within range
+        for bid in self.orderbook['bids']:
+            bid_price = Decimal(str(bid[0]))
+            if min_allowed <= bid_price <= max_allowed:
+                return bid_price
+                
+        # If no valid bid found, find the closest one below range
+        for bid in self.orderbook['bids']:
+            bid_price = Decimal(str(bid[0]))
+            if bid_price < min_allowed:
+                self.logger.info(f"Using nearest bid below range: {bid_price} (reference: {reference_price})")
+                return bid_price
+                
+        return None
+        
+    def get_nearest_valid_ask(self, reference_price: Decimal) -> Optional[Decimal]:
+        """
+        Get the nearest valid ask price within acceptable deviation.
+        Returns the lowest ask that's within max_orderbook_deviation of reference price.
+        """
+        if not hasattr(self, 'orderbook') or not self.orderbook.get('asks'):
+            return None
+            
+        max_deviation = self.config.max_orderbook_deviation
+        if max_deviation <= 0:
+            # No filtering, return best ask
+            return Decimal(str(self.orderbook['asks'][0][0]))
+            
+        min_allowed = reference_price * (Decimal('1') - max_deviation)
+        max_allowed = reference_price * (Decimal('1') + max_deviation)
+        
+        # Find lowest ask within range
+        for ask in self.orderbook['asks']:
+            ask_price = Decimal(str(ask[0]))
+            if min_allowed <= ask_price <= max_allowed:
+                return ask_price
+                
+        # If no valid ask found, find the closest one above range
+        for ask in reversed(self.orderbook['asks']):
+            ask_price = Decimal(str(ask[0]))
+            if ask_price > max_allowed:
+                self.logger.info(f"Using nearest ask above range: {ask_price} (reference: {reference_price})")
+                return ask_price
+                
+        return None
 
 
 # Updated example usage that loads config directly from YAML

@@ -16,6 +16,25 @@ bot_config:
   grid_spread: 0.0005  # 0.05% distance between levels
   min_order_size: 0.1  # Minimum order size in base currency
   max_position: 0.5  # Maximum position in base currency
-  polling_interval: 8.0  # How often to check prices (seconds)
-  target_inventory_ratio: 0.5  # Target 50% in base, 50% in quote
+  polling_interval: 8.0  # Update frequency in seconds
+  target_inventory_ratio: 0.5  # Target ratio of base currency (0.5 = 50/50 balance)
   inventory_tolerance: 0.1  # Acceptable deviation from target 
+  
+  # Outlier filtering
+  # Set to 0 to disable filtering
+  # 0.1 = 10% max deviation from reference price (recommended)
+  # 0.05 = 5% for tighter filtering in volatile markets
+  max_orderbook_deviation: 0.1
+  
+  # Out-of-range price fallback settings
+  # When orderbook filtering removes all valid orders (all are beyond max_orderbook_deviation)
+  # Enable fallback pricing to use alternative price sources
+  out_of_range_pricing_fallback: true
+  
+  # Price mode when all orders are out of range
+  # Options: 'vwap', 'nearest_bid', 'nearest_ask', 'auto'
+  # vwap = Use Volume Weighted Average Price (safest, default)
+  # nearest_bid = Use nearest valid bid (conservative for buying)
+  # nearest_ask = Use nearest valid ask (conservative for selling)
+  # auto = Try all price sources in order (VWAP → ticker → last price)
+  out_of_range_price_mode: vwap

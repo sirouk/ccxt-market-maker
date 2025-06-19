@@ -150,6 +150,15 @@ display_instance_details() {
         # Show trading pair
         local symbol=$(grep "symbol:" "$config_file" | awk '{print $2}' | tr -d '"')
         echo -e "${BLUE}Trading Pair:${NC} $symbol"
+        
+        # Show outlier filtering setting
+        local max_deviation=$(grep "max_orderbook_deviation:" "$config_file" | awk '{print $2}')
+        if [ -n "$max_deviation" ] && [ "$max_deviation" != "0" ]; then
+            local deviation_pct=$(echo "scale=1; $max_deviation * 100" | bc)
+            echo -e "${BLUE}Outlier Filter:${NC} ±${deviation_pct}% from last price"
+        else
+            echo -e "${BLUE}Outlier Filter:${NC} Disabled"
+        fi
     fi
 }
 
@@ -176,9 +185,11 @@ manage_instance() {
         echo "3) Remove container only (keep data and config)"
         echo "4) Remove everything (container, data, and config)"
         echo "5) View recent logs to diagnose issue"
-        echo "6) Back to main menu"
+        echo "6) Run simulation (dry run)"
+        echo "7) Reconfigure"
+        echo "8) Back to main menu"
         
-        read -p "Enter your choice (1-6): " recovery_choice
+        read -p "Enter your choice (1-8): " recovery_choice
         
         case $recovery_choice in
             1)
@@ -256,6 +267,57 @@ manage_instance() {
                 return
                 ;;
             6)
+                # Extract coin and instance number
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                
+                if [ -f "$config_file" ]; then
+                    echo -e "\n${BLUE}Running market simulation for ${instance}...${NC}"
+                    echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
+                    echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
+                    
+                    # Check if simulate_bot_cycle.py exists
+                    if [ -f "simulate_bot_cycle.py" ]; then
+                        # Run the simulation
+                        python3 simulate_bot_cycle.py "$config_file"
+                        
+                        echo -e "\n${GREEN}Simulation complete!${NC}"
+                        echo -e "${BLUE}This can help diagnose configuration issues.${NC}"
+                        echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                        read
+                    else
+                        echo -e "${RED}Error: simulate_bot_cycle.py not found!${NC}"
+                        echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
+                        echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                        read
+                    fi
+                else
+                    echo -e "${RED}Configuration file not found!${NC}"
+                    sleep 2
+                fi
+                manage_instance "$instance"  # Go back to recovery menu
+                return
+                ;;
+            7)
+                # Extract coin and instance number
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                
+                if [ -f "$config_file" ]; then
+                    echo -e "\n${BLUE}Reconfiguring ${instance}...${NC}"
+                    reconfigure_instance "$config_file" "$coin" "$instance_num"
+                else
+                    echo -e "${RED}Configuration file not found!${NC}"
+                    sleep 2
+                fi
+                manage_instance "$instance"  # Go back to recovery menu
+                return
+                ;;
+            8)
                 return
                 ;;
             *)
@@ -282,9 +344,11 @@ manage_instance() {
         echo "3) Stop"
         echo "4) Delete (including data)"
         echo "5) View configuration"
-        echo "6) Back to main menu"
+        echo "6) Run simulation (dry run)"
+        echo "7) Reconfigure"
+        echo "8) Back to main menu"
         
-        read -p "Enter your choice (1-6): " choice
+        read -p "Enter your choice (1-8): " choice
         
         case $choice in
             1)
@@ -352,6 +416,53 @@ manage_instance() {
                 fi
                 ;;
             6)
+                # Extract coin and instance number (coin is lowercase in Docker)
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                
+                if [ -f "$config_file" ]; then
+                    echo -e "\n${BLUE}Running market simulation for ${instance}...${NC}"
+                    echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
+                    echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
+                    
+                    # Check if simulate_bot_cycle.py exists
+                    if [ -f "simulate_bot_cycle.py" ]; then
+                        # Run the simulation
+                        python3 simulate_bot_cycle.py "$config_file"
+                        
+                        echo -e "\n${GREEN}Simulation complete!${NC}"
+                        echo -e "${BLUE}This shows exactly what orders the bot would place with current market conditions.${NC}"
+                        echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                        read
+                    else
+                        echo -e "${RED}Error: simulate_bot_cycle.py not found!${NC}"
+                        echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
+                        echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                        read
+                    fi
+                else
+                    echo -e "${RED}Configuration file not found!${NC}"
+                    sleep 2
+                fi
+                ;;
+            7)
+                # Extract coin and instance number (coin is lowercase in Docker)
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+                
+                if [ -f "$config_file" ]; then
+                    echo -e "\n${BLUE}Reconfiguring ${instance}...${NC}"
+                    reconfigure_instance "$config_file" "$coin" "$instance_num"
+                else
+                    echo -e "${RED}Configuration file not found!${NC}"
+                    sleep 2
+                fi
+                ;;
+            8)
                 return
                 ;;
             *)
@@ -463,6 +574,168 @@ import_api_credentials() {
     done
 }
 
+# Function to reconfigure existing instance
+reconfigure_instance() {
+    local config_file=$1
+    local coin=$2
+    local instance_num=$3
+    
+    echo
+    echo -e "${BLUE}=== Reconfigure ${coin}-${instance_num} ===${NC}"
+    echo -e "${YELLOW}Press Enter to keep current values (shown in brackets)${NC}"
+    echo
+    
+    # Read current values from config file
+    local current_symbol=$(grep "symbol:" "$config_file" | awk '{print $2}' | tr -d '"')
+    local current_grid_levels=$(grep "grid_levels:" "$config_file" | awk '{print $2}')
+    local current_grid_spread=$(grep "grid_spread:" "$config_file" | awk '{print $2}')
+    local current_min_order_size=$(grep "min_order_size:" "$config_file" | awk '{print $2}')
+    local current_max_position=$(grep "max_position:" "$config_file" | awk '{print $2}')
+    local current_target_ratio=$(grep "target_inventory_ratio:" "$config_file" | awk '{print $2}')
+    local current_inventory_tolerance=$(grep "inventory_tolerance:" "$config_file" | awk '{print $2}')
+    local current_max_deviation=$(grep "max_orderbook_deviation:" "$config_file" | awk '{print $2}')
+    local current_pricing_fallback=$(grep "out_of_range_pricing_fallback:" "$config_file" | awk '{print $2}')
+    local current_price_mode=$(grep "out_of_range_price_mode:" "$config_file" | awk '{print $2}')
+    local current_polling_interval=$(grep "polling_interval:" "$config_file" | awk '{print $2}')
+    
+    # Extract quote currency from symbol
+    local quote=$(echo "$current_symbol" | cut -d'/' -f2)
+    
+    # Get trading parameters with current values as defaults
+    echo -e "${BLUE}=== Trading Parameters ===${NC}"
+    echo -e "${BLUE}Current symbol: ${current_symbol}${NC}"
+    echo
+    
+    read -p "Grid levels (number of orders on each side) [${current_grid_levels}]: " grid_levels
+    grid_levels=${grid_levels:-$current_grid_levels}
+    
+    read -p "Grid spread (% distance between levels) [${current_grid_spread}]: " grid_spread
+    grid_spread=${grid_spread:-$current_grid_spread}
+    
+    read -p "Minimum order size in ${coin} [${current_min_order_size}]: " min_order_size
+    min_order_size=${min_order_size:-$current_min_order_size}
+    
+    read -p "Maximum position in ${coin} [${current_max_position}]: " max_position
+    max_position=${max_position:-$current_max_position}
+    
+    read -p "Target inventory ratio (0.5 = 50% in each currency) [${current_target_ratio}]: " target_ratio
+    target_ratio=${target_ratio:-$current_target_ratio}
+    
+    read -p "Inventory tolerance [${current_inventory_tolerance}]: " inventory_tolerance
+    inventory_tolerance=${inventory_tolerance:-$current_inventory_tolerance}
+    
+    read -p "Polling interval (seconds) [${current_polling_interval}]: " polling_interval
+    polling_interval=${polling_interval:-$current_polling_interval}
+    
+    # Advanced settings
+    echo
+    echo -e "${BLUE}=== Advanced Settings ===${NC}"
+    
+    read -p "Max orderbook deviation (0.1 = 10%, 0 = disable) [${current_max_deviation}]: " max_deviation
+    max_deviation=${max_deviation:-$current_max_deviation}
+    
+    # Convert boolean to y/n for display
+    local fallback_display="y"
+    if [ "$current_pricing_fallback" = "false" ]; then
+        fallback_display="n"
+    fi
+    
+    read -p "Enable fallback pricing when all orders filtered? (y/n) [${fallback_display}]: " enable_fallback
+    enable_fallback=${enable_fallback:-$fallback_display}
+    out_of_range_pricing_fallback=true
+    if [[ "$enable_fallback" == "n" ]]; then
+        out_of_range_pricing_fallback=false
+    fi
+    
+    # Map current price mode to number for display
+    local price_mode_num=1
+    case $current_price_mode in
+        vwap) price_mode_num=1 ;;
+        nearest_bid) price_mode_num=2 ;;
+        nearest_ask) price_mode_num=3 ;;
+        auto) price_mode_num=4 ;;
+    esac
+    
+    echo
+    echo "Out-of-range price mode (when all orders filtered):"
+    echo "  1. vwap (Volume Weighted Average Price - safest)"
+    echo "  2. nearest_bid (Conservative for buying)"
+    echo "  3. nearest_ask (Conservative for selling)"
+    echo "  4. auto (Adaptive - tries all sources)"
+    read -p "Select price mode (1-4) [${price_mode_num}]: " price_mode_choice
+    price_mode_choice=${price_mode_choice:-$price_mode_num}
+    
+    case $price_mode_choice in
+        1) out_of_range_price_mode="vwap" ;;
+        2) out_of_range_price_mode="nearest_bid" ;;
+        3) out_of_range_price_mode="nearest_ask" ;;
+        4) out_of_range_price_mode="auto" ;;
+        *) out_of_range_price_mode="vwap" ;;
+    esac
+    
+    # Create temporary config file with new values
+    local temp_config="${config_file}.tmp"
+    
+    # Get API credentials from existing config (unchanged)
+    local api_key=$(grep -A2 "^api:" "$config_file" | grep "key:" | sed 's/.*key:.*"\(.*\)".*/\1/')
+    local api_secret=$(grep -A2 "^api:" "$config_file" | grep "secret:" | sed 's/.*secret:.*"\(.*\)".*/\1/')
+    
+    cat > "$temp_config" << EOF
+# Exchange API credentials
+api:
+  key: "${api_key}"
+  secret: "${api_secret}"
+
+# Database and logging
+storage:
+  db_path: "data/${coin}-${instance_num}/market_maker.db"
+  log_file: "data/${coin}-${instance_num}/market_maker.log"
+
+# Bot configuration
+bot_config:
+  exchange_id: "latoken"
+  symbol: "${current_symbol}"
+  grid_levels: ${grid_levels}
+  grid_spread: ${grid_spread}
+  min_order_size: ${min_order_size}
+  max_position: ${max_position}
+  polling_interval: ${polling_interval}
+  target_inventory_ratio: ${target_ratio}
+  inventory_tolerance: ${inventory_tolerance}
+  max_orderbook_deviation: ${max_deviation}
+  out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
+  out_of_range_price_mode: ${out_of_range_price_mode}
+EOF
+    
+    # Replace old config with new
+    mv "$temp_config" "$config_file"
+    
+    echo
+    echo -e "${GREEN}Configuration updated successfully!${NC}"
+    
+    # Check if container is running
+    local instance_name="${PREFIX}-$(echo $coin | tr '[:upper:]' '[:lower:]')-${instance_num}"
+    local container_status=$(docker inspect -f '{{.State.Status}}' "$instance_name" 2>/dev/null)
+    
+    if [ "$container_status" = "running" ]; then
+        echo
+        read -p "Would you like to restart the container to apply changes? (yes/no): " restart_choice
+        if [ "$restart_choice" = "yes" ]; then
+            echo -e "${YELLOW}Restarting ${instance_name}...${NC}"
+            echo -e "${BLUE}The bot will gracefully cancel all open orders before restarting.${NC}"
+            docker restart "$instance_name"
+            echo -e "${GREEN}Container restarted with new configuration!${NC}"
+            sleep 2
+        else
+            echo -e "${YELLOW}Note: Changes will take effect on next container restart.${NC}"
+            sleep 2
+        fi
+    else
+        echo -e "${YELLOW}Note: Container is not running. Start it to use the new configuration.${NC}"
+        sleep 2
+    fi
+}
+
 # Function to create new instance
 create_new_instance() {
     clear
@@ -473,6 +746,12 @@ create_new_instance() {
     echo
     echo "The bot uses a delta-neutral strategy to maintain a target balance"
     echo "between your base currency (e.g., ATOM) and quote currency (e.g., USDT)."
+    echo
+    echo -e "${BLUE}Key Features:${NC}"
+    echo "• Grid-based order placement above and below market price"
+    echo "• Automatic inventory rebalancing to maintain target ratios"
+    echo "• Smart filtering to ignore extreme outlier orders"
+    echo "• Graceful shutdown with automatic order cancellation"
     echo
     echo -e "${YELLOW}Prerequisites:${NC}"
     echo "1. A LAToken account with API credentials"
@@ -595,6 +874,44 @@ create_new_instance() {
     read -p "Target inventory ratio (0.5 = 50% in each currency, default: 0.5): " target_ratio
     target_ratio=${target_ratio:-0.5}
     
+    # Add outlier filtering parameter
+    echo
+    echo -e "${YELLOW}=== Advanced Settings ===${NC}"
+    echo "Some exchanges have extreme outlier orders that can distort pricing."
+    echo "The bot can filter orders that are too far from the last traded price."
+    echo
+    read -p "Enter max orderbook deviation (0.1 = 10%, 0 = disable filtering, default 0.1): " max_deviation
+    max_deviation=${max_deviation:-0.1}
+    
+    read -p "Enable fallback pricing when all orders are filtered out? (y/n, default y): " enable_fallback
+    enable_fallback=${enable_fallback:-y}
+    out_of_range_pricing_fallback=true
+    if [[ "$enable_fallback" == "n" ]]; then
+        out_of_range_pricing_fallback=false
+    fi
+    
+    echo "Out-of-range price mode (when all orders filtered):"
+    echo "  1. vwap (Volume Weighted Average Price - safest)"
+    echo "  2. nearest_bid (Conservative for buying)"
+    echo "  3. nearest_ask (Conservative for selling)"
+    echo "  4. auto (Adaptive - tries all sources)"
+    read -p "Select price mode (1-4, default 1): " price_mode_choice
+    price_mode_choice=${price_mode_choice:-1}
+    
+    case $price_mode_choice in
+        1) out_of_range_price_mode="vwap" ;;
+        2) out_of_range_price_mode="nearest_bid" ;;
+        3) out_of_range_price_mode="nearest_ask" ;;
+        4) out_of_range_price_mode="auto" ;;
+        *) out_of_range_price_mode="vwap" ;;
+    esac
+    
+    # Validate max_deviation
+    if [[ "$max_deviation" != "0" ]] && (( $(echo "$max_deviation < 0" | bc -l) )); then
+        echo -e "${YELLOW}Invalid deviation, using default 0.1 (10%)${NC}"
+        max_deviation=0.1
+    fi
+    
     # Calculate funding requirements
     echo
     echo -e "${BLUE}=== Funding Requirements ===${NC}"
@@ -655,6 +972,9 @@ bot_config:
   polling_interval: 8.0
   target_inventory_ratio: ${target_ratio}
   inventory_tolerance: 0.1
+  max_orderbook_deviation: ${max_deviation}
+  out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
+  out_of_range_price_mode: ${out_of_range_price_mode}
 EOF
     
     # Create docker-compose file for this instance
@@ -700,6 +1020,13 @@ EOF
     echo "• Place sell orders above the current market price"
     echo "• Automatically adjust orders as the market moves"
     echo "• Maintain your target inventory ratio"
+    
+    # Show outlier filtering status
+    if [ "$max_deviation" != "0" ]; then
+        local deviation_pct=$(echo "scale=1; $max_deviation * 100" | bc)
+        echo "• Filter out orders more than ${deviation_pct}% from market price"
+    fi
+    
     echo
     echo "You can check the logs with:"
     echo -e "${YELLOW}docker logs ${instance_name_lower}${NC}"
@@ -738,9 +1065,10 @@ manage_orphaned_config() {
     echo "3) Delete configuration only"
     echo "4) Delete everything (config and data)"
     echo "5) View configuration"
-    echo "6) Back to main menu"
+    echo "6) Run simulation (dry run)"
+    echo "7) Back to main menu"
     
-    read -p "Enter your choice (1-6): " choice
+    read -p "Enter your choice (1-7): " choice
     
     case $choice in
         1)
@@ -859,6 +1187,33 @@ EOF
             fi
             ;;
         6)
+            local config_file="${CONFIG_DIR}/${coin}-${instance_num}-config.yaml"
+            if [ -f "$config_file" ]; then
+                echo -e "\n${BLUE}Running market simulation for ${coin}-${instance_num}...${NC}"
+                echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
+                echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
+                
+                # Check if simulate_bot_cycle.py exists
+                if [ -f "simulate_bot_cycle.py" ]; then
+                    # Run the simulation
+                    python3 simulate_bot_cycle.py "$config_file"
+                    
+                    echo -e "\n${GREEN}Simulation complete!${NC}"
+                    echo -e "${BLUE}This shows what would happen if you recreate this bot.${NC}"
+                    echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                    read
+                else
+                    echo -e "${RED}Error: simulate_bot_cycle.py not found!${NC}"
+                    echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
+                    echo -e "\n${YELLOW}Press Enter to continue...${NC}"
+                    read
+                fi
+            else
+                echo -e "${RED}Configuration file not found!${NC}"
+                sleep 2
+            fi
+            ;;
+        7)
             return
             ;;
         *)
