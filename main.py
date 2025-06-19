@@ -97,46 +97,119 @@ class MarketMakerREST:
             # Get reference price for filtering outliers
             reference_price = None
             
-            # First try to get VWAP (Volume Weighted Average Price) - most reliable
-            try:
-                ticker = self.retry_handler.retry_with_backoff(
-                    self.exchange.fetch_ticker,
-                    self.config.symbol
-                )
-                
-                # Store ticker data
-                ticker_bid = Decimal(str(ticker.get('bid', 0)))
-                ticker_ask = Decimal(str(ticker.get('ask', 0)))
-                
-                # Get VWAP as primary reference
-                vwap = ticker.get('vwap')
-                if vwap and vwap > 0:
-                    reference_price = Decimal(str(vwap))
-                    self.logger.info(f"Using VWAP for outlier filtering: {reference_price}")
-                # Fallback to ticker bid/ask mid-price if spread is reasonable
-                elif ticker_bid > 0 and ticker_ask > 0:
-                    spread_ratio = ticker_ask / ticker_bid
-                    if spread_ratio < Decimal('10'):  # Only use if spread is reasonable
-                        reference_price = (ticker_bid + ticker_ask) / Decimal('2')
-                        self.logger.info(f"Using ticker bid/ask mid-price for filtering: {reference_price} (bid: {ticker_bid}, ask: {ticker_ask})")
-                    else:
-                        self.logger.warning(f"Ticker spread too wide for filtering (ratio: {spread_ratio:.2f})")
-                
-                # Update last price and ticker values
-                last_price = ticker.get('last')
-                if last_price:
-                    self.last_price = Decimal(str(last_price))
-                
-                self.ticker_bid = ticker_bid
-                self.ticker_ask = ticker_ask
-                
-            except Exception as e:
-                self.logger.warning(f"Failed to fetch ticker: {e}")
+            # Determine reference price based on configuration
+            filter_ref = self.config.outlier_filter_reference.lower()
             
-            # If still no reference price, try to use existing last_price as last resort
-            if not reference_price and self.last_price:
-                reference_price = self.last_price
-                self.logger.warning(f"Using existing last price for filtering: {reference_price} (may be unreliable)")
+            if filter_ref == 'vwap':
+                # First try to get VWAP (Volume Weighted Average Price) - most reliable
+                try:
+                    ticker = await self.retry_handler.retry_with_backoff(
+                        self.exchange.fetch_ticker,
+                        "Fetch ticker",
+                        self.config.symbol
+                    )
+                    
+                    # Store ticker data
+                    ticker_bid = Decimal(str(ticker.get('bid', 0)))
+                    ticker_ask = Decimal(str(ticker.get('ask', 0)))
+                    
+                    # Get VWAP as primary reference
+                    vwap = ticker.get('vwap')
+                    if vwap and vwap > 0:
+                        reference_price = Decimal(str(vwap))
+                        self.last_vwap = reference_price  # Store for later use
+                        self.logger.info(f"Using VWAP for outlier filtering: {reference_price}")
+                    
+                    # Update last price and ticker values
+                    last_price = ticker.get('last')
+                    if last_price:
+                        self.last_price = Decimal(str(last_price))
+                    
+                    self.ticker_bid = ticker_bid
+                    self.ticker_ask = ticker_ask
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to fetch ticker: {e}")
+                    
+            elif filter_ref in ['nearest_bid', 'nearest_ask', 'ticker_mid']:
+                # Fetch ticker for these modes
+                try:
+                    ticker = await self.retry_handler.retry_with_backoff(
+                        self.exchange.fetch_ticker,
+                        "Fetch ticker",
+                        self.config.symbol
+                    )
+                    
+                    ticker_bid = Decimal(str(ticker.get('bid', 0)))
+                    ticker_ask = Decimal(str(ticker.get('ask', 0)))
+                    
+                    if filter_ref == 'nearest_bid' and ticker_bid > 0:
+                        reference_price = ticker_bid
+                        self.logger.info(f"Using ticker bid for outlier filtering: {reference_price}")
+                    elif filter_ref == 'nearest_ask' and ticker_ask > 0:
+                        reference_price = ticker_ask
+                        self.logger.info(f"Using ticker ask for outlier filtering: {reference_price}")
+                    elif filter_ref == 'ticker_mid' and ticker_bid > 0 and ticker_ask > 0:
+                        reference_price = (ticker_bid + ticker_ask) / Decimal('2')
+                        self.logger.info(f"Using ticker mid-price for outlier filtering: {reference_price}")
+                    
+                    # Store values for later use
+                    self.ticker_bid = ticker_bid
+                    self.ticker_ask = ticker_ask
+                    
+                    # Store VWAP if available for fallback
+                    vwap = ticker.get('vwap')
+                    if vwap and vwap > 0:
+                        self.last_vwap = Decimal(str(vwap))
+                    
+                    # Update last price
+                    last_price = ticker.get('last')
+                    if last_price:
+                        self.last_price = Decimal(str(last_price))
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to fetch ticker: {e}")
+                    
+            elif filter_ref == 'last':
+                # Use last traded price
+                try:
+                    ticker = await self.retry_handler.retry_with_backoff(
+                        self.exchange.fetch_ticker,
+                        "Fetch ticker",
+                        self.config.symbol
+                    )
+                    
+                    last_price = ticker.get('last')
+                    if last_price and last_price > 0:
+                        reference_price = Decimal(str(last_price))
+                        self.last_price = reference_price
+                        self.logger.info(f"Using last price for outlier filtering: {reference_price}")
+                    
+                    # Store other values for later use
+                    self.ticker_bid = Decimal(str(ticker.get('bid', 0)))
+                    self.ticker_ask = Decimal(str(ticker.get('ask', 0)))
+                    
+                    vwap = ticker.get('vwap')
+                    if vwap and vwap > 0:
+                        self.last_vwap = Decimal(str(vwap))
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to fetch ticker: {e}")
+            
+            # Fallback if primary reference not available
+            if not reference_price:
+                # Try fallback options in order
+                if hasattr(self, 'last_vwap') and self.last_vwap:
+                    reference_price = self.last_vwap
+                    self.logger.warning(f"Using stored VWAP as fallback for filtering: {reference_price}")
+                elif hasattr(self, 'ticker_bid') and hasattr(self, 'ticker_ask') and self.ticker_bid > 0 and self.ticker_ask > 0:
+                    spread_ratio = self.ticker_ask / self.ticker_bid
+                    if spread_ratio < Decimal('10'):  # Only use if spread is reasonable
+                        reference_price = (self.ticker_bid + self.ticker_ask) / Decimal('2')
+                        self.logger.warning(f"Using ticker mid-price as fallback for filtering: {reference_price}")
+                elif self.last_price:
+                    reference_price = self.last_price
+                    self.logger.warning(f"Using existing last price as fallback for filtering: {reference_price} (may be unreliable)")
             
             # If we have a valid reference price and max_orderbook_deviation is set, filter outliers
             if reference_price and reference_price > 0 and self.config.max_orderbook_deviation > 0:
@@ -754,13 +827,13 @@ class MarketMakerREST:
         # Get reference price for nearest bid/ask modes
         reference_price = None
         try:
-            ticker = self.retry_handler.retry_with_backoff(
-                self.exchange.fetch_ticker,
-                self.config.symbol
-            )
-            vwap = ticker.get('vwap')
-            if vwap and vwap > 0:
-                reference_price = Decimal(str(vwap))
+            # Try to use stored VWAP from last fetch_and_update_orderbook call
+            if hasattr(self, 'ticker_bid') and hasattr(self, 'ticker_ask'):
+                # We already have ticker data from fetch_and_update_orderbook
+                vwap = getattr(self, 'last_vwap', None)
+                if vwap and vwap > 0:
+                    reference_price = vwap
+                    self.logger.debug(f"Using stored VWAP for price calculation: {reference_price}")
         except Exception as e:
             self.logger.warning(f"Failed to get reference price: {e}")
             
@@ -800,11 +873,9 @@ class MarketMakerREST:
             
             # Try ticker bid/ask
             try:
-                ticker_bid = ticker.get('bid')
-                ticker_ask = ticker.get('ask')
+                ticker_bid = self.ticker_bid if hasattr(self, 'ticker_bid') else None
+                ticker_ask = self.ticker_ask if hasattr(self, 'ticker_ask') else None
                 if ticker_bid and ticker_ask and ticker_bid > 0 and ticker_ask > 0:
-                    ticker_bid = Decimal(str(ticker_bid))
-                    ticker_ask = Decimal(str(ticker_ask))
                     spread_ratio = ticker_ask / ticker_bid
                     if spread_ratio < Decimal('10'):  # Spread less than 10x
                         mid_price = (ticker_bid + ticker_ask) / Decimal('2')
@@ -816,27 +887,18 @@ class MarketMakerREST:
                 pass
             
             # Try last price
-            last_price = ticker.get('last')
-            if last_price and last_price > 0:
-                last_price = Decimal(str(last_price))
-                self.logger.warning(f"Auto mode: Using last price: {last_price}")
-                return last_price
+            if self.last_price and self.last_price > 0:
+                self.logger.warning(f"Auto mode: Using last price: {self.last_price}")
+                return self.last_price
         
         # Final fallback for all modes (except when explicitly handled above)
         if price_mode != 'auto':
             # For non-auto modes, still try fallback options
             try:
-                ticker = self.retry_handler.retry_with_backoff(
-                    self.exchange.fetch_ticker,
-                    self.config.symbol
-                )
-                
-                # Try ticker bid/ask
-                ticker_bid = ticker.get('bid')
-                ticker_ask = ticker.get('ask')
+                # Try stored ticker bid/ask
+                ticker_bid = self.ticker_bid if hasattr(self, 'ticker_bid') else None
+                ticker_ask = self.ticker_ask if hasattr(self, 'ticker_ask') else None
                 if ticker_bid and ticker_ask and ticker_bid > 0 and ticker_ask > 0:
-                    ticker_bid = Decimal(str(ticker_bid))
-                    ticker_ask = Decimal(str(ticker_ask))
                     spread_ratio = ticker_ask / ticker_bid
                     if spread_ratio < Decimal('10'):  # Spread less than 10x
                         mid_price = (ticker_bid + ticker_ask) / Decimal('2')
@@ -846,11 +908,9 @@ class MarketMakerREST:
                         self.logger.warning(f"Ticker spread too wide (ratio: {spread_ratio})")
                         
                 # Last resort: use last price
-                last_price = ticker.get('last')
-                if last_price and last_price > 0:
-                    last_price = Decimal(str(last_price))
-                    self.logger.warning(f"Using last price as final fallback: {last_price}")
-                    return last_price
+                if self.last_price and self.last_price > 0:
+                    self.logger.warning(f"Using last price as final fallback: {self.last_price}")
+                    return self.last_price
                     
             except Exception as e:
                 self.logger.error(f"Failed to calculate mid-price: {e}")

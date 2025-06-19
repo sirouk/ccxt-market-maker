@@ -26,6 +26,16 @@ bot_config:
   # 0.05 = 5% for tighter filtering in volatile markets
   max_orderbook_deviation: 0.1
   
+  # Reference price source for outlier filtering
+  # This determines what price is used as the "fair value" anchor
+  # Options: 'vwap', 'nearest_bid', 'nearest_ask', 'ticker_mid', 'last'
+  # vwap = Volume Weighted Average Price (most reliable, default)
+  # nearest_bid = Use current best bid (conservative for selling)
+  # nearest_ask = Use current best ask (conservative for buying)
+  # ticker_mid = Use mid-point between bid/ask
+  # last = Use last traded price (can be stale)
+  outlier_filter_reference: vwap
+  
   # Out-of-range price fallback settings
   # When orderbook filtering removes all valid orders (all are beyond max_orderbook_deviation)
   # Enable fallback pricing to use alternative price sources

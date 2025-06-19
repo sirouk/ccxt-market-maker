@@ -594,6 +594,7 @@ reconfigure_instance() {
     local current_target_ratio=$(grep "target_inventory_ratio:" "$config_file" | awk '{print $2}')
     local current_inventory_tolerance=$(grep "inventory_tolerance:" "$config_file" | awk '{print $2}')
     local current_max_deviation=$(grep "max_orderbook_deviation:" "$config_file" | awk '{print $2}')
+    local current_filter_ref=$(grep "outlier_filter_reference:" "$config_file" | awk '{print $2}')
     local current_pricing_fallback=$(grep "out_of_range_pricing_fallback:" "$config_file" | awk '{print $2}')
     local current_price_mode=$(grep "out_of_range_price_mode:" "$config_file" | awk '{print $2}')
     local current_polling_interval=$(grep "polling_interval:" "$config_file" | awk '{print $2}')
@@ -654,15 +655,47 @@ reconfigure_instance() {
     echo
     echo -e "${YELLOW}Filter out orders that deviate too much from market price${NC}"
     echo -e "${YELLOW}Helps protect against extreme outlier orders (0.1 = filter >10% deviation)${NC}"
+    echo -e "${YELLOW}Percentage of allowed price deviation from reference (0.1 = 10%)${NC}"
+    echo -e "${YELLOW}Set to 0 to disable outlier filtering completely${NC}"
     echo -e "${YELLOW}Current value: ${current_max_deviation}${NC}"
-    read -p "Max orderbook deviation (0 to disable) [${current_max_deviation}]: " max_deviation
+    read -p "Max orderbook deviation (0-1) [${current_max_deviation}]: " max_deviation
     max_deviation=${max_deviation:-$current_max_deviation}
+    
+    echo
+    echo -e "${YELLOW}Reference price source for outlier filtering${NC}"
+    echo "  1. vwap (Volume Weighted Average Price - most reliable)"
+    echo "  2. nearest_bid (Conservative for selling)"
+    echo "  3. nearest_ask (Conservative for buying)"
+    echo "  4. ticker_mid (Mid-point between bid/ask)"
+    echo "  5. last (Last traded price)"
+    
+    # Map current value to number
+    local ref_num=1
+    case $current_filter_ref in
+        "vwap") ref_num=1 ;;
+        "nearest_bid") ref_num=2 ;;
+        "nearest_ask") ref_num=3 ;;
+        "ticker_mid") ref_num=4 ;;
+        "last") ref_num=5 ;;
+    esac
+    
+    echo -e "${YELLOW}Current: ${current_filter_ref} (option ${ref_num})${NC}"
+    read -p "Select reference price (1-5) [${ref_num}]: " ref_choice
+    ref_choice=${ref_choice:-$ref_num}
+    
+    case $ref_choice in
+        1) outlier_filter_reference="vwap" ;;
+        2) outlier_filter_reference="nearest_bid" ;;
+        3) outlier_filter_reference="nearest_ask" ;;
+        4) outlier_filter_reference="ticker_mid" ;;
+        5) outlier_filter_reference="last" ;;
+        *) outlier_filter_reference=$current_filter_ref ;;
+    esac
     
     echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
     echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
     read -p "Enable fallback pricing when all orders filtered? (y/n, default y): " enable_fallback
-    enable_fallback=${enable_fallback:-y}
     out_of_range_pricing_fallback=true
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
@@ -715,6 +748,7 @@ bot_config:
   target_inventory_ratio: ${target_ratio}
   inventory_tolerance: ${inventory_tolerance}
   max_orderbook_deviation: ${max_deviation}
+  outlier_filter_reference: ${outlier_filter_reference}
   out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
   out_of_range_price_mode: ${out_of_range_price_mode}
 EOF
@@ -904,18 +938,47 @@ create_new_instance() {
     echo
     echo -e "${YELLOW}=== Advanced Settings ===${NC}"
     echo
-    echo -e "${YELLOW}Some exchanges have extreme outlier orders that can distort pricing.${NC}"
-    echo -e "${YELLOW}The bot can filter orders that are too far from the market price.${NC}"
+    echo -e "${YELLOW}Percentage of allowed price deviation from reference (0.1 = 10%)${NC}"
+    echo -e "${YELLOW}Set to 0 to disable outlier filtering completely${NC}"
+    echo -e "${YELLOW}Current value: ${current_max_deviation}${NC}"
+    read -p "Max orderbook deviation (0-1) [${current_max_deviation}]: " max_deviation
+    max_deviation=${max_deviation:-$current_max_deviation}
+    
     echo
-    echo -e "${YELLOW}Filter threshold as decimal (0.1 = filter orders >10% from market)${NC}"
-    read -p "Max orderbook deviation (0 to disable, default: 0.1): " max_deviation
-    max_deviation=${max_deviation:-0.1}
+    echo -e "${YELLOW}Reference price source for outlier filtering${NC}"
+    echo "  1. vwap (Volume Weighted Average Price - most reliable)"
+    echo "  2. nearest_bid (Conservative for selling)"
+    echo "  3. nearest_ask (Conservative for buying)"
+    echo "  4. ticker_mid (Mid-point between bid/ask)"
+    echo "  5. last (Last traded price)"
+    
+    # Map current value to number
+    local ref_num=1
+    case $current_filter_ref in
+        "vwap") ref_num=1 ;;
+        "nearest_bid") ref_num=2 ;;
+        "nearest_ask") ref_num=3 ;;
+        "ticker_mid") ref_num=4 ;;
+        "last") ref_num=5 ;;
+    esac
+    
+    echo -e "${YELLOW}Current: ${current_filter_ref} (option ${ref_num})${NC}"
+    read -p "Select reference price (1-5) [${ref_num}]: " ref_choice
+    ref_choice=${ref_choice:-$ref_num}
+    
+    case $ref_choice in
+        1) outlier_filter_reference="vwap" ;;
+        2) outlier_filter_reference="nearest_bid" ;;
+        3) outlier_filter_reference="nearest_ask" ;;
+        4) outlier_filter_reference="ticker_mid" ;;
+        5) outlier_filter_reference="last" ;;
+        *) outlier_filter_reference=$current_filter_ref ;;
+    esac
     
     echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
     echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
     read -p "Enable fallback pricing when all orders filtered? (y/n, default y): " enable_fallback
-    enable_fallback=${enable_fallback:-y}
     out_of_range_pricing_fallback=true
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
@@ -1005,6 +1068,7 @@ bot_config:
   target_inventory_ratio: ${target_ratio}
   inventory_tolerance: ${inventory_tolerance}
   max_orderbook_deviation: ${max_deviation}
+  outlier_filter_reference: ${outlier_filter_reference}
   out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
   out_of_range_price_mode: ${out_of_range_price_mode}
 EOF

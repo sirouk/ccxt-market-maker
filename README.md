@@ -99,6 +99,7 @@ Key parameters in `config.yaml`:
 | `inventory_tolerance` | Acceptable deviation from target | 0.1 |
 | `polling_interval` | Update frequency (seconds) | 8.0 |
 | `max_orderbook_deviation` | Filter orders beyond % from reference price | 0.1 (10%) |
+| `outlier_filter_reference` | Price source for outlier filtering anchor | vwap |
 | `out_of_range_pricing_fallback` | Enable fallback pricing when all orders filtered | true |
 | `out_of_range_price_mode` | Fallback price source when all orders out of range | vwap |
 
@@ -119,20 +120,26 @@ Example with default settings:
 ## Advanced Features
 
 ### Outlier Filtering
-The bot includes intelligent outlier filtering to handle exchanges with extreme orders (e.g., LAToken):
 
-- **max_orderbook_deviation**: Filters out orders that deviate more than X% from the reference price
-- **Reference Price Hierarchy**:
-  1. **VWAP (Volume Weighted Average Price)**: Most reliable, based on actual trading volume
-  2. **Ticker Bid/Ask Mid-Price**: Used if spread is reasonable (<10x)
-  3. **Last Traded Price**: Least reliable, only used as last resort
+The bot can filter out extreme outlier orders that are far from the current market price:
 
-Example configuration:
 ```yaml
-max_orderbook_deviation: 0.1  # Filter orders >10% from VWAP/reference price
+max_orderbook_deviation: 0.1  # Filter orders >10% from reference price
+outlier_filter_reference: vwap  # What price to use as "fair value"
 ```
 
-**Why VWAP?** VWAP is calculated based on actual trading volume, making it much more resistant to outlier trades and market manipulation compared to simple last traded price.
+**How it works:**
+1. Bot determines a reference price based on `outlier_filter_reference`
+2. Calculates allowed price range: `reference ± (reference × max_orderbook_deviation)`
+3. Filters out any orders outside this range
+4. If all orders are filtered out, uses `out_of_range_price_mode` as fallback
+
+**Reference Price Options:**
+- `vwap`: Volume Weighted Average Price (most reliable, reflects actual trading)
+- `nearest_bid`: Current best bid (conservative when selling)
+- `nearest_ask`: Current best ask (conservative when buying)
+- `ticker_mid`: Mid-point between bid/ask
+- `last`: Last traded price (can be stale on illiquid markets)
 
 ### Out-of-Range Price Fallback
 
