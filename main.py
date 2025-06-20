@@ -94,107 +94,70 @@ class MarketMakerREST:
                 self.config.symbol
             )
             
-            # Get reference price for filtering outliers
-            reference_price = None
+            # Store raw orderbook for reference
+            self._raw_orderbook = ob
             
             # Determine reference price based on configuration
             filter_ref = self.config.outlier_filter_reference.lower()
+            reference_price = None
             
+            # Always fetch ticker first to get all available data
+            try:
+                ticker = await self.retry_handler.retry_with_backoff(
+                    self.exchange.fetch_ticker,
+                    "Fetch ticker",
+                    self.config.symbol
+                )
+                
+                # Store ticker data
+                self.ticker_bid = Decimal(str(ticker.get('bid', 0)))
+                self.ticker_ask = Decimal(str(ticker.get('ask', 0)))
+                
+                # Get and store VWAP
+                vwap = ticker.get('vwap')
+                if vwap and vwap > 0:
+                    self.last_vwap = Decimal(str(vwap))
+                
+                # Update last price
+                last_price = ticker.get('last')
+                if last_price:
+                    self.last_price = Decimal(str(last_price))
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch ticker: {e}")
+            
+            # Now determine the reference price based on config
             if filter_ref == 'vwap':
-                # First try to get VWAP (Volume Weighted Average Price) - most reliable
-                try:
-                    ticker = await self.retry_handler.retry_with_backoff(
-                        self.exchange.fetch_ticker,
-                        "Fetch ticker",
-                        self.config.symbol
-                    )
+                # Use VWAP as reference
+                if hasattr(self, 'last_vwap') and self.last_vwap:
+                    reference_price = self.last_vwap
+                    self.logger.info(f"Using VWAP for outlier filtering: {reference_price}")
                     
-                    # Store ticker data
-                    ticker_bid = Decimal(str(ticker.get('bid', 0)))
-                    ticker_ask = Decimal(str(ticker.get('ask', 0)))
-                    
-                    # Get VWAP as primary reference
-                    vwap = ticker.get('vwap')
-                    if vwap and vwap > 0:
-                        reference_price = Decimal(str(vwap))
-                        self.last_vwap = reference_price  # Store for later use
-                        self.logger.info(f"Using VWAP for outlier filtering: {reference_price}")
-                    
-                    # Update last price and ticker values
-                    last_price = ticker.get('last')
-                    if last_price:
-                        self.last_price = Decimal(str(last_price))
-                    
-                    self.ticker_bid = ticker_bid
-                    self.ticker_ask = ticker_ask
-                    
-                except Exception as e:
-                    self.logger.warning(f"Failed to fetch ticker: {e}")
-                    
-            elif filter_ref in ['nearest_bid', 'nearest_ask', 'ticker_mid']:
-                # Fetch ticker for these modes
-                try:
-                    ticker = await self.retry_handler.retry_with_backoff(
-                        self.exchange.fetch_ticker,
-                        "Fetch ticker",
-                        self.config.symbol
-                    )
-                    
-                    ticker_bid = Decimal(str(ticker.get('bid', 0)))
-                    ticker_ask = Decimal(str(ticker.get('ask', 0)))
-                    
-                    if filter_ref == 'nearest_bid' and ticker_bid > 0:
-                        reference_price = ticker_bid
-                        self.logger.info(f"Using ticker bid for outlier filtering: {reference_price}")
-                    elif filter_ref == 'nearest_ask' and ticker_ask > 0:
-                        reference_price = ticker_ask
-                        self.logger.info(f"Using ticker ask for outlier filtering: {reference_price}")
-                    elif filter_ref == 'ticker_mid' and ticker_bid > 0 and ticker_ask > 0:
-                        reference_price = (ticker_bid + ticker_ask) / Decimal('2')
-                        self.logger.info(f"Using ticker mid-price for outlier filtering: {reference_price}")
-                    
-                    # Store values for later use
-                    self.ticker_bid = ticker_bid
-                    self.ticker_ask = ticker_ask
-                    
-                    # Store VWAP if available for fallback
-                    vwap = ticker.get('vwap')
-                    if vwap and vwap > 0:
-                        self.last_vwap = Decimal(str(vwap))
-                    
-                    # Update last price
-                    last_price = ticker.get('last')
-                    if last_price:
-                        self.last_price = Decimal(str(last_price))
+            elif filter_ref in ['nearest_bid', 'nearest_ask']:
+                # For nearest_bid/ask, we need a stable reference first (VWAP)
+                # Then we'll find the nearest bid/ask to that reference
+                if hasattr(self, 'last_vwap') and self.last_vwap:
+                    # We'll use VWAP as the stable reference
+                    # The actual nearest bid/ask will be found after we have the orderbook
+                    reference_price = self.last_vwap
+                    self.logger.info(f"Using VWAP as base reference for {filter_ref}: {reference_price}")
+                else:
+                    # Fallback to ticker mid if no VWAP
+                    if self.ticker_bid > 0 and self.ticker_ask > 0:
+                        reference_price = (self.ticker_bid + self.ticker_ask) / Decimal('2')
+                        self.logger.warning(f"No VWAP available, using ticker mid for {filter_ref}: {reference_price}")
                         
-                except Exception as e:
-                    self.logger.warning(f"Failed to fetch ticker: {e}")
+            elif filter_ref == 'ticker_mid':
+                # Use ticker mid-price as reference
+                if self.ticker_bid > 0 and self.ticker_ask > 0:
+                    reference_price = (self.ticker_bid + self.ticker_ask) / Decimal('2')
+                    self.logger.info(f"Using ticker mid-price for outlier filtering: {reference_price}")
                     
             elif filter_ref == 'last':
                 # Use last traded price
-                try:
-                    ticker = await self.retry_handler.retry_with_backoff(
-                        self.exchange.fetch_ticker,
-                        "Fetch ticker",
-                        self.config.symbol
-                    )
-                    
-                    last_price = ticker.get('last')
-                    if last_price and last_price > 0:
-                        reference_price = Decimal(str(last_price))
-                        self.last_price = reference_price
-                        self.logger.info(f"Using last price for outlier filtering: {reference_price}")
-                    
-                    # Store other values for later use
-                    self.ticker_bid = Decimal(str(ticker.get('bid', 0)))
-                    self.ticker_ask = Decimal(str(ticker.get('ask', 0)))
-                    
-                    vwap = ticker.get('vwap')
-                    if vwap and vwap > 0:
-                        self.last_vwap = Decimal(str(vwap))
-                        
-                except Exception as e:
-                    self.logger.warning(f"Failed to fetch ticker: {e}")
+                if self.last_price and self.last_price > 0:
+                    reference_price = self.last_price
+                    self.logger.info(f"Using last price for outlier filtering: {reference_price}")
             
             # Fallback if primary reference not available
             if not reference_price:
@@ -219,12 +182,31 @@ class MarketMakerREST:
                 self.logger.debug(f"Filtering orderbook with reference_price={reference_price}, "
                                 f"allowed range: {min_allowed_price} - {max_allowed_price}")
                 
-                # Filter bids and asks
+                # First, get our own order prices to exclude them
+                my_bid_prices = set()
+                my_ask_prices = set()
+                if hasattr(self, 'order_manager') and self.order_manager.my_orders:
+                    for order in self.order_manager.my_orders.values():
+                        try:
+                            order_price = Decimal(order['price'])
+                            if order['side'] == 'buy':
+                                my_bid_prices.add(order_price)
+                            else:
+                                my_ask_prices.add(order_price)
+                        except:
+                            pass
+                
+                # Filter bids and asks, excluding our own orders
                 filtered_bids = {}
                 filtered_asks = {}
                 
                 for b in ob['bids']:
                     price = Decimal(str(b[0]))
+                    # Skip our own orders
+                    if price in my_bid_prices:
+                        self.logger.debug(f"Skipping our own bid at {price}")
+                        continue
+                        
                     if min_allowed_price <= price <= max_allowed_price:
                         filtered_bids[price] = Decimal(str(b[1]))
                     else:
@@ -232,6 +214,11 @@ class MarketMakerREST:
                 
                 for a in ob['asks']:
                     price = Decimal(str(a[0]))
+                    # Skip our own orders
+                    if price in my_ask_prices:
+                        self.logger.debug(f"Skipping our own ask at {price}")
+                        continue
+                        
                     if min_allowed_price <= price <= max_allowed_price:
                         filtered_asks[price] = Decimal(str(a[1]))
                     else:
@@ -243,6 +230,90 @@ class MarketMakerREST:
                 self.logger.info(f"Orderbook filtered: {len(filtered_bids)} bids, {len(filtered_asks)} asks "
                                f"(removed {len(ob['bids']) - len(filtered_bids)} outlier bids, "
                                f"{len(ob['asks']) - len(filtered_asks)} outlier asks)")
+                
+                # If using nearest_bid/ask mode and we have an orderbook, update reference price
+                if filter_ref in ['nearest_bid', 'nearest_ask'] and reference_price:
+                    original_reference = reference_price
+                    
+                    if filter_ref == 'nearest_bid':
+                        # Find the nearest bid to our reference (including unfiltered bids)
+                        all_bids_excluding_ours = []
+                        for b in ob['bids']:
+                            bid_price = Decimal(str(b[0]))
+                            if bid_price not in my_bid_prices:
+                                all_bids_excluding_ours.append(bid_price)
+                        
+                        if all_bids_excluding_ours:
+                            # Find bid with minimum distance to reference
+                            nearest_bid = min(all_bids_excluding_ours, 
+                                            key=lambda x: abs(x - original_reference))
+                            reference_price = nearest_bid
+                            self.logger.info(f"Updated reference from {original_reference} to nearest bid: {reference_price}")
+                            
+                            # Store for later use in pricing
+                            self._last_nearest_bid = reference_price
+                            
+                            # Re-filter with new reference
+                            min_allowed_price = reference_price * (Decimal('1') - self.config.max_orderbook_deviation)
+                            max_allowed_price = reference_price * (Decimal('1') + self.config.max_orderbook_deviation)
+                            
+                            filtered_bids = {}
+                            filtered_asks = {}
+                            
+                            for b in ob['bids']:
+                                price = Decimal(str(b[0]))
+                                if price not in my_bid_prices and min_allowed_price <= price <= max_allowed_price:
+                                    filtered_bids[price] = Decimal(str(b[1]))
+                            
+                            for a in ob['asks']:
+                                price = Decimal(str(a[0]))
+                                if price not in my_ask_prices and min_allowed_price <= price <= max_allowed_price:
+                                    filtered_asks[price] = Decimal(str(a[1]))
+                            
+                            self.orderbook['bids'] = SortedDict(filtered_bids)
+                            self.orderbook['asks'] = SortedDict(filtered_asks)
+                            
+                            self.logger.info(f"Re-filtered with nearest bid reference: {len(filtered_bids)} bids, {len(filtered_asks)} asks")
+                    
+                    elif filter_ref == 'nearest_ask':
+                        # Find the nearest ask to our reference (including unfiltered asks)
+                        all_asks_excluding_ours = []
+                        for a in ob['asks']:
+                            ask_price = Decimal(str(a[0]))
+                            if ask_price not in my_ask_prices:
+                                all_asks_excluding_ours.append(ask_price)
+                        
+                        if all_asks_excluding_ours:
+                            # Find ask with minimum distance to reference
+                            nearest_ask = min(all_asks_excluding_ours, 
+                                            key=lambda x: abs(x - original_reference))
+                            reference_price = nearest_ask
+                            self.logger.info(f"Updated reference from {original_reference} to nearest ask: {reference_price}")
+                            
+                            # Store for later use in pricing
+                            self._last_nearest_ask = reference_price
+                            
+                            # Re-filter with new reference
+                            min_allowed_price = reference_price * (Decimal('1') - self.config.max_orderbook_deviation)
+                            max_allowed_price = reference_price * (Decimal('1') + self.config.max_orderbook_deviation)
+                            
+                            filtered_bids = {}
+                            filtered_asks = {}
+                            
+                            for b in ob['bids']:
+                                price = Decimal(str(b[0]))
+                                if price not in my_bid_prices and min_allowed_price <= price <= max_allowed_price:
+                                    filtered_bids[price] = Decimal(str(b[1]))
+                            
+                            for a in ob['asks']:
+                                price = Decimal(str(a[0]))
+                                if price not in my_ask_prices and min_allowed_price <= price <= max_allowed_price:
+                                    filtered_asks[price] = Decimal(str(a[1]))
+                            
+                            self.orderbook['bids'] = SortedDict(filtered_bids)
+                            self.orderbook['asks'] = SortedDict(filtered_asks)
+                            
+                            self.logger.info(f"Re-filtered with nearest ask reference: {len(filtered_bids)} bids, {len(filtered_asks)} asks")
                 
                 # If orderbook is empty after filtering and directional bias is enabled
                 if self.config.out_of_range_pricing_fallback and (not filtered_bids or not filtered_asks):
@@ -824,41 +895,57 @@ class MarketMakerREST:
         price_mode = self.config.out_of_range_price_mode.lower()
         self.logger.info(f"All orders out of range, using fallback price mode: {price_mode}")
         
-        # Get reference price for nearest bid/ask modes
-        reference_price = None
-        try:
-            # Try to use stored VWAP from last fetch_and_update_orderbook call
-            if hasattr(self, 'ticker_bid') and hasattr(self, 'ticker_ask'):
-                # We already have ticker data from fetch_and_update_orderbook
-                vwap = getattr(self, 'last_vwap', None)
-                if vwap and vwap > 0:
-                    reference_price = vwap
-                    self.logger.debug(f"Using stored VWAP for price calculation: {reference_price}")
-        except Exception as e:
-            self.logger.warning(f"Failed to get reference price: {e}")
-            
         # Option 2: Use configured price mode
         if price_mode == 'nearest_bid':
-            if reference_price and hasattr(self, 'orderbook'):
-                nearest_bid = self.get_nearest_valid_bid(reference_price)
+            # Check if we have a stored nearest bid from filtering
+            if hasattr(self, '_last_nearest_bid') and self._last_nearest_bid:
+                self.logger.info(f"Using stored nearest bid price: {self._last_nearest_bid}")
+                return self._last_nearest_bid
+            
+            # Try to find nearest bid in current orderbook
+            if hasattr(self, 'orderbook'):
+                # First try getting from the raw orderbook (including all bids)
+                if hasattr(self, '_raw_orderbook'):
+                    nearest_bid = self._find_nearest_bid_in_raw_orderbook()
+                    if nearest_bid:
+                        self.logger.info(f"Using nearest bid from raw orderbook: {nearest_bid}")
+                        return nearest_bid
+                
+                # Otherwise use filtered orderbook
+                nearest_bid = self.get_nearest_valid_bid(self.last_price or Decimal('0'))
                 if nearest_bid:
                     self.logger.info(f"Using nearest bid price: {nearest_bid}")
                     return nearest_bid
-                else:
-                    self.logger.warning("No valid bid found, falling back to VWAP")
+            
+            self.logger.warning("No valid bid found for nearest_bid mode")
                     
         elif price_mode == 'nearest_ask':
-            if reference_price and hasattr(self, 'orderbook'):
-                nearest_ask = self.get_nearest_valid_ask(reference_price)
+            # Check if we have a stored nearest ask from filtering
+            if hasattr(self, '_last_nearest_ask') and self._last_nearest_ask:
+                self.logger.info(f"Using stored nearest ask price: {self._last_nearest_ask}")
+                return self._last_nearest_ask
+            
+            # Try to find nearest ask in current orderbook
+            if hasattr(self, 'orderbook'):
+                # First try getting from the raw orderbook (including all asks)
+                if hasattr(self, '_raw_orderbook'):
+                    nearest_ask = self._find_nearest_ask_in_raw_orderbook()
+                    if nearest_ask:
+                        self.logger.info(f"Using nearest ask from raw orderbook: {nearest_ask}")
+                        return nearest_ask
+                
+                # Otherwise use filtered orderbook
+                nearest_ask = self.get_nearest_valid_ask(self.last_price or Decimal('0'))
                 if nearest_ask:
                     self.logger.info(f"Using nearest ask price: {nearest_ask}")
                     return nearest_ask
-                else:
-                    self.logger.warning("No valid ask found, falling back to VWAP")
+            
+            self.logger.warning("No valid ask found for nearest_ask mode")
         
         elif price_mode == 'vwap':
             # Use VWAP if available
-            if reference_price:
+            reference_price = getattr(self, 'last_vwap', None)
+            if reference_price and reference_price > 0:
                 self.logger.info(f"Using VWAP: {reference_price}")
                 return reference_price
         
@@ -867,7 +954,8 @@ class MarketMakerREST:
             self.logger.info("Using auto mode - trying all price sources")
             
             # First try VWAP
-            if reference_price:
+            reference_price = getattr(self, 'last_vwap', None)
+            if reference_price and reference_price > 0:
                 self.logger.info(f"Auto mode: Using VWAP: {reference_price}")
                 return reference_price
             
@@ -972,6 +1060,52 @@ class MarketMakerREST:
             self.logger.warning(f"Error getting directional reference price: {e}")
             return None
 
+    def _find_nearest_bid_in_raw_orderbook(self) -> Optional[Decimal]:
+        """Find the highest bid in the raw orderbook, excluding our own orders."""
+        if not hasattr(self, '_raw_orderbook') or not self._raw_orderbook.get('bids'):
+            return None
+            
+        # Get our order prices to exclude
+        my_bid_prices = set()
+        if hasattr(self, 'order_manager') and self.order_manager.my_orders:
+            for order in self.order_manager.my_orders.values():
+                if order['side'] == 'buy':
+                    try:
+                        my_bid_prices.add(Decimal(order['price']))
+                    except:
+                        pass
+        
+        # Find highest bid that's not ours
+        for bid in self._raw_orderbook['bids']:
+            bid_price = Decimal(str(bid[0]))
+            if bid_price not in my_bid_prices:
+                return bid_price
+                
+        return None
+        
+    def _find_nearest_ask_in_raw_orderbook(self) -> Optional[Decimal]:
+        """Find the lowest ask in the raw orderbook, excluding our own orders."""
+        if not hasattr(self, '_raw_orderbook') or not self._raw_orderbook.get('asks'):
+            return None
+            
+        # Get our order prices to exclude
+        my_ask_prices = set()
+        if hasattr(self, 'order_manager') and self.order_manager.my_orders:
+            for order in self.order_manager.my_orders.values():
+                if order['side'] == 'sell':
+                    try:
+                        my_ask_prices.add(Decimal(order['price']))
+                    except:
+                        pass
+        
+        # Find lowest ask that's not ours
+        for ask in self._raw_orderbook['asks']:
+            ask_price = Decimal(str(ask[0]))
+            if ask_price not in my_ask_prices:
+                return ask_price
+                
+        return None
+
     def get_nearest_valid_bid(self, reference_price: Decimal) -> Optional[Decimal]:
         """
         Get the nearest valid bid price within acceptable deviation.
@@ -982,24 +1116,47 @@ class MarketMakerREST:
             
         max_deviation = self.config.max_orderbook_deviation
         if max_deviation <= 0:
-            # No filtering, return best bid
-            return Decimal(str(self.orderbook['bids'][0][0]))
+            # No filtering, return best bid from SortedDict
+            try:
+                best_bid_price, _ = self.orderbook['bids'].peekitem(-1)  # Get highest bid
+                return best_bid_price
+            except:
+                return None
             
         min_allowed = reference_price * (Decimal('1') - max_deviation)
         max_allowed = reference_price * (Decimal('1') + max_deviation)
         
-        # Find highest bid within range
-        for bid in self.orderbook['bids']:
-            bid_price = Decimal(str(bid[0]))
-            if min_allowed <= bid_price <= max_allowed:
+        # Filter out our own orders
+        my_order_prices = set()
+        for order in self.order_manager.my_orders.values():
+            if order['side'] == 'buy':
+                try:
+                    my_order_prices.add(Decimal(order['price']))
+                except:
+                    pass
+        
+        # Find highest bid within range (excluding our orders)
+        for bid_price, bid_volume in self.orderbook['bids'].items():
+            if bid_price not in my_order_prices and min_allowed <= bid_price <= max_allowed:
                 return bid_price
                 
-        # If no valid bid found, find the closest one below range
-        for bid in self.orderbook['bids']:
-            bid_price = Decimal(str(bid[0]))
-            if bid_price < min_allowed:
-                self.logger.info(f"Using nearest bid below range: {bid_price} (reference: {reference_price})")
-                return bid_price
+        # If no valid bid found, find the ACTUALLY nearest one (by absolute distance)
+        nearest_bid = None
+        nearest_distance = None
+        
+        for bid_price, bid_volume in self.orderbook['bids'].items():
+            # Skip our own orders
+            if bid_price in my_order_prices:
+                continue
+                
+            distance = abs(bid_price - reference_price)
+            if nearest_distance is None or distance < nearest_distance:
+                nearest_distance = distance
+                nearest_bid = bid_price
+        
+        if nearest_bid:
+            self.logger.info(f"Using nearest bid to reference: {nearest_bid} (distance: {nearest_distance}, reference: {reference_price})")
+            return nearest_bid
                 
         return None
         
@@ -1013,24 +1170,47 @@ class MarketMakerREST:
             
         max_deviation = self.config.max_orderbook_deviation
         if max_deviation <= 0:
-            # No filtering, return best ask
-            return Decimal(str(self.orderbook['asks'][0][0]))
+            # No filtering, return best ask from SortedDict
+            try:
+                best_ask_price, _ = self.orderbook['asks'].peekitem(0)  # Get lowest ask
+                return best_ask_price
+            except:
+                return None
             
         min_allowed = reference_price * (Decimal('1') - max_deviation)
         max_allowed = reference_price * (Decimal('1') + max_deviation)
         
-        # Find lowest ask within range
-        for ask in self.orderbook['asks']:
-            ask_price = Decimal(str(ask[0]))
-            if min_allowed <= ask_price <= max_allowed:
+        # Filter out our own orders
+        my_order_prices = set()
+        for order in self.order_manager.my_orders.values():
+            if order['side'] == 'sell':
+                try:
+                    my_order_prices.add(Decimal(order['price']))
+                except:
+                    pass
+        
+        # Find lowest ask within range (excluding our orders)
+        for ask_price, ask_volume in self.orderbook['asks'].items():
+            if ask_price not in my_order_prices and min_allowed <= ask_price <= max_allowed:
                 return ask_price
                 
-        # If no valid ask found, find the closest one above range
-        for ask in reversed(self.orderbook['asks']):
-            ask_price = Decimal(str(ask[0]))
-            if ask_price > max_allowed:
-                self.logger.info(f"Using nearest ask above range: {ask_price} (reference: {reference_price})")
-                return ask_price
+        # If no valid ask found, find the ACTUALLY nearest one (by absolute distance)
+        nearest_ask = None
+        nearest_distance = None
+        
+        for ask_price, ask_volume in self.orderbook['asks'].items():
+            # Skip our own orders
+            if ask_price in my_order_prices:
+                continue
+                
+            distance = abs(ask_price - reference_price)
+            if nearest_distance is None or distance < nearest_distance:
+                nearest_distance = distance
+                nearest_ask = ask_price
+        
+        if nearest_ask:
+            self.logger.info(f"Using nearest ask to reference: {nearest_ask} (distance: {nearest_distance}, reference: {reference_price})")
+            return nearest_ask
                 
         return None
 
