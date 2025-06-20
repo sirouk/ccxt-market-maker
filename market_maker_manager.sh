@@ -227,8 +227,9 @@ manage_instance() {
         echo "6) Run simulation (dry run)"
         echo "7) Reconfigure"
         echo "8) Back to main menu"
+        echo "9) Tail logs (live)"
         
-        read -p "Enter your choice (1-8): " recovery_choice
+        read -p "Enter your choice (1-9): " recovery_choice
         
         case $recovery_choice in
             1)
@@ -359,6 +360,32 @@ manage_instance() {
             8)
                 return
                 ;;
+            9)
+                # Extract coin and instance number
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                # Try nested directory structure first, then simple structure
+                local log_file="${DATA_DIR}/${coin}-${instance_num}/${coin}-${instance_num}/market_maker.log"
+                if [ ! -f "$log_file" ]; then
+                    log_file="${DATA_DIR}/${coin}-${instance_num}/market_maker.log"
+                fi
+                
+                if [ -f "$log_file" ]; then
+                    echo -e "\n${BLUE}Tailing logs for ${instance}...${NC}"
+                    echo -e "${YELLOW}Press Ctrl+C to stop tailing and return to menu${NC}\n"
+                    # Use trap to catch Ctrl+C
+                    trap 'echo -e "\n${GREEN}Stopped tailing logs${NC}"; sleep 1' INT
+                    tail -f "$log_file" 2>/dev/null || true
+                    trap - INT  # Reset trap
+                else
+                    echo -e "${RED}Log file not found: $log_file${NC}"
+                    echo -e "${YELLOW}Press Enter to continue...${NC}"
+                    read
+                fi
+                manage_instance "$instance"  # Go back to recovery menu
+                return
+                ;;
             *)
                 echo -e "${RED}Invalid choice!${NC}"
                 sleep 1
@@ -386,8 +413,9 @@ manage_instance() {
         echo "6) Run simulation (dry run)"
         echo "7) Reconfigure"
         echo "8) Back to main menu"
+        echo "9) Tail logs (live)"
         
-        read -p "Enter your choice (1-8): " choice
+        read -p "Enter your choice (1-9): " choice
         
         case $choice in
             1)
@@ -503,6 +531,30 @@ manage_instance() {
                 ;;
             8)
                 return
+                ;;
+            9)
+                # Extract coin and instance number
+                local coin_lower=$(echo "$instance" | sed "s/^${PREFIX}-\(.*\)-[0-9]*$/\1/")
+                local coin=$(echo "$coin_lower" | tr '[:lower:]' '[:upper:]')
+                local instance_num=$(echo "$instance" | sed "s/^${PREFIX}-.*-\([0-9]*\)$/\1/")
+                # Try nested directory structure first, then simple structure
+                local log_file="${DATA_DIR}/${coin}-${instance_num}/${coin}-${instance_num}/market_maker.log"
+                if [ ! -f "$log_file" ]; then
+                    log_file="${DATA_DIR}/${coin}-${instance_num}/market_maker.log"
+                fi
+                
+                if [ -f "$log_file" ]; then
+                    echo -e "\n${BLUE}Tailing logs for ${instance}...${NC}"
+                    echo -e "${YELLOW}Press Ctrl+C to stop tailing and return to menu${NC}\n"
+                    # Use trap to catch Ctrl+C
+                    trap 'echo -e "\n${GREEN}Stopped tailing logs${NC}"; sleep 1' INT
+                    tail -f "$log_file" 2>/dev/null || true
+                    trap - INT  # Reset trap
+                else
+                    echo -e "${RED}Log file not found: $log_file${NC}"
+                    echo -e "${YELLOW}Press Enter to continue...${NC}"
+                    read
+                fi
                 ;;
             *)
                 echo -e "${RED}Invalid choice!${NC}"
