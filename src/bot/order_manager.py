@@ -54,7 +54,8 @@ class OrderManager:
                 current_ids.add(oid)
 
                 # Convert numeric fields to string for consistency
-                price = str(order.get('price', 0))
+                price_value = order.get('price')
+                price = str(price_value) if price_value is not None else '0'
                 amount = str(order.get('amount', 0))
                 filled = str(order.get('filled', 0))
 

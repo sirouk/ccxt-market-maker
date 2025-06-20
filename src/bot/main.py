@@ -691,13 +691,15 @@ class MarketMakerREST:
         for order in self.order_manager.my_orders.values():
             if order['side'] == side:
                 try:
-                    order_price = Decimal(order['price'])
-                    price_diff_pct = abs(order_price - price) / price
-                    if price_diff_pct < Decimal('0.001'):
-                        self.logger.debug(f"Skipping duplicate {side} order: existing at {order_price}, new at {price} (diff: {price_diff_pct:.6f})")
-                        return
-                except (InvalidOperation, ConversionSyntax, TypeError):
-                    self.logger.warning(f"Could not compare order prices: {order['price']} vs {price}")
+                    order_price_str = order.get('price')
+                    if order_price_str and order_price_str != 'None' and order_price_str != '0':
+                        order_price = Decimal(order_price_str)
+                        price_diff_pct = abs(order_price - price) / price
+                        if price_diff_pct < Decimal('0.001'):
+                            self.logger.debug(f"Skipping duplicate {side} order: existing at {order_price}, new at {price} (diff: {price_diff_pct:.6f})")
+                            return
+                except (InvalidOperation, ConversionSyntax, TypeError, ValueError) as e:
+                    self.logger.debug(f"Could not parse order price '{order.get('price')}': {e}")
                     continue
 
         # Validate funds and adjust size if necessary

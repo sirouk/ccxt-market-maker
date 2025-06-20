@@ -25,7 +25,15 @@ class DatabaseManager:
                          side TEXT NOT NULL,
                          price REAL NOT NULL,
                          quantity REAL NOT NULL,
-                         timestamp INTEGER NOT NULL)''')
+                         timestamp INTEGER NOT NULL,
+                         status TEXT DEFAULT 'OPEN')''')
+
+        # Check if status column exists, if not add it (for migration)
+        cursor.execute("PRAGMA table_info(orders)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'status' not in columns:
+            cursor.execute("ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'OPEN'")
+            self.logger.info("Added status column to orders table")
 
         # Trades table
         cursor.execute('''CREATE TABLE IF NOT EXISTS trades
@@ -53,11 +61,21 @@ class DatabaseManager:
         """Record a new order in the database."""
         cursor = self.conn.cursor()
         cursor.execute('''INSERT OR REPLACE INTO orders
-                         (id, pair, side, price, quantity, timestamp)
-                         VALUES (?, ?, ?, ?, ?, ?)''',
-                      (order.id, order.pair, order.side, order.price,
-                       order.quantity, int(time.time())))
+                         (id, pair, side, price, quantity, timestamp, status)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                      (order['id'], order['pair'], order['side'], order['price'],
+                       order['quantity'], int(time.time()), 'OPEN'))
         self.conn.commit()
+
+    def update_order_status(self, order_id: str, status: str) -> None:
+        """Update the status of an existing order."""
+        cursor = self.conn.cursor()
+        cursor.execute('''UPDATE orders
+                         SET status = ?
+                         WHERE id = ?''',
+                      (status, order_id))
+        self.conn.commit()
+        self.logger.debug(f"Updated order {order_id} status to {status}")
 
     def record_trade(self, order_id: str, pair: str, side: str,
                     price: float, quantity: float) -> None:
