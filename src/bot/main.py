@@ -637,6 +637,50 @@ class MarketMakerREST:
             self.logger.error(f"Error calculating grid: {e}")
             return []
 
+    async def cancel_orders_outside_grid(self, grid_orders: List[Tuple[str, Decimal, Decimal]]) -> None:
+        """Cancel any existing orders that are not part of the current grid."""
+        # Create a set of target prices from the grid
+        grid_prices = {price for _, price, _ in grid_orders}
+        
+        # Add some tolerance for price comparison (same as duplicate detection)
+        price_tolerance = Decimal('0.001')  # 0.1%
+        
+        orders_to_cancel = []
+        
+        # Check each existing order
+        for order_id, order in list(self.order_manager.my_orders.items()):
+            try:
+                order_price = Decimal(order['price'])
+                order_side = order['side']
+                
+                # Check if this order price matches any grid price within tolerance
+                order_in_grid = False
+                for side, grid_price, _ in grid_orders:
+                    if side == order_side:
+                        price_diff_pct = abs(order_price - grid_price) / grid_price
+                        if price_diff_pct < price_tolerance:
+                            order_in_grid = True
+                            break
+                
+                if not order_in_grid:
+                    orders_to_cancel.append((order_id, order_price, order_side))
+                    
+            except (InvalidOperation, ConversionSyntax, TypeError, ValueError) as e:
+                self.logger.debug(f"Could not parse order price for cancellation check: {e}")
+                continue
+        
+        # Cancel orders that are outside the grid
+        if orders_to_cancel:
+            self.logger.info(f"Cancelling {len(orders_to_cancel)} orders outside current grid")
+            for order_id, price, side in orders_to_cancel:
+                self.logger.debug(f"Cancelling {side} order at {price} (ID: {order_id})")
+                try:
+                    await self.order_manager.cancel_order(order_id)
+                except Exception as e:
+                    self.logger.error(f"Failed to cancel order {order_id}: {e}")
+        else:
+            self.logger.debug("All existing orders are within the current grid")
+
     async def verify_order_placement(self, order_id: str, max_retries: int = 3) -> bool:
         """
         Verify that an order was successfully placed by checking if it exists in open orders.
@@ -812,6 +856,9 @@ class MarketMakerREST:
 
                 grid_orders = await self.calculate_order_grid()
                 self.logger.debug(f"Generated {len(grid_orders)} potential grid orders")
+
+                # Cancel orders that are outside the current grid
+                await self.cancel_orders_outside_grid(grid_orders)
 
                 placed_orders = 0
                 for side, price, size in grid_orders:
