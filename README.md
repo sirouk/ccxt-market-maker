@@ -63,6 +63,19 @@ This is perfect for:
 - Verifying your balance is sufficient
 - Checking if outlier filtering is working correctly
 
+**Reconfigure Running Instances**: You can now reconfigure any running instance without recreating it:
+
+1. Select any instance from the manager
+2. Choose option 7: **"Reconfigure"**
+3. Update any parameters (current values shown as defaults)
+4. Bot can be restarted automatically with new settings
+
+This allows you to:
+- Adjust grid levels and spreads on the fly
+- Change outlier filtering settings
+- Update inventory targets
+- Modify any bot parameter without losing order history
+
 ---
 
 ## Prerequisites
@@ -136,10 +149,14 @@ outlier_filter_reference: vwap  # What price to use as "fair value"
 
 **Reference Price Options:**
 - `vwap`: Volume Weighted Average Price (most reliable, reflects actual trading)
-- `nearest_bid`: Current best bid (conservative when selling)
-- `nearest_ask`: Current best ask (conservative when buying)
-- `ticker_mid`: Mid-point between bid/ask
+- `nearest_bid`: Finds the bid closest to VWAP and uses that as reference (good for conservative selling)
+- `nearest_ask`: Finds the ask closest to VWAP and uses that as reference (good for conservative buying)
+- `ticker_mid`: Mid-point between ticker bid/ask spreads
 - `last`: Last traded price (can be stale on illiquid markets)
+
+**Important**: When using `nearest_bid` or `nearest_ask`, the bot first determines a stable reference (VWAP) and then finds the actual bid/ask closest to that reference. This prevents the bot from being misled by extreme outlier orders.
+
+**Self-Order Exclusion**: The bot automatically excludes its own orders from all price calculations and filtering. This prevents feedback loops where the bot would react to its own orders, ensuring it always follows the real market instead of creating its own price levels.
 
 ### Out-of-Range Price Fallback
 
