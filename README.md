@@ -2,6 +2,7 @@
 
 A market-making bot that provides liquidity on centralized exchanges (CEXs) using a delta-neutral strategy to improve order book depth and user experience.
 
+
 ## What This Does
 
 This bot:
@@ -16,10 +17,17 @@ Perfect for:
 - Traders wanting to earn from spreads while minimizing directional exposure
 - Projects looking to improve liquidity for their tokens
 
+
 ## 🚀 Quick Start (Recommended)
 
-The easiest way to get started is using our interactive setup script:
+Grab the code:
+```bash
+cd $HOME
+git clone https://github.com/sirouk/ccxt-market-maker
+cd ./ccxt-market-maker
+```
 
+The easiest way to get started is using our interactive setup script:
 ```bash
 ./market_maker_manager.sh
 ```
