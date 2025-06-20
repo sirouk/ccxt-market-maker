@@ -1,9 +1,9 @@
 services:
-  market-maker-0l:
+  market-maker-manual:
     build: 
       context: .
       network: host
-    container_name: market-maker-0l
+    container_name: market-maker-manual
     network_mode: host
     volumes:
       # Mount config file and persist database and logs
@@ -14,4 +14,4 @@ services:
     tty: true
     stdin_open: true
     # Give more time for graceful shutdown
-    stop_grace_period: 60s
+    stop_grace_period: 60s 

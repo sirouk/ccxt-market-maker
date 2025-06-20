@@ -1,34 +1,40 @@
 #!/bin/bash
+set -e
 
 # Ensure data directory exists
 mkdir -p /app/data
 
-echo "Starting market maker bot..."
-
-# Handle shutdown signals properly
-cleanup() {
-    echo "Received shutdown signal, sending SIGTERM to Python process..."
-    if [ ! -z "$PYTHON_PID" ]; then
-        kill -TERM "$PYTHON_PID"
-        echo "Waiting for graceful shutdown..."
-        wait "$PYTHON_PID"
-        echo "Python process has terminated"
+# Function to handle shutdown
+shutdown() {
+    echo "Received shutdown signal, stopping market maker..."
+    if [ ! -z "$BOT_PID" ]; then
+        # Send SIGTERM to the Python process
+        kill -TERM $BOT_PID 2>/dev/null || true
+        
+        # Wait for graceful shutdown (up to 60 seconds)
+        timeout=60
+        while [ $timeout -gt 0 ] && kill -0 $BOT_PID 2>/dev/null; do
+            sleep 1
+            ((timeout--))
+        done
+        
+        # If still running, force kill
+        if kill -0 $BOT_PID 2>/dev/null; then
+            echo "Forcing shutdown..."
+            kill -KILL $BOT_PID 2>/dev/null || true
+        fi
     fi
     exit 0
 }
 
-# Set up signal handlers
-trap cleanup SIGTERM SIGINT
+# Register the shutdown function to handle signals
+trap shutdown SIGTERM SIGINT
 
-# Run Python in background so we can handle signals
-python main.py &
-PYTHON_PID=$!
+# Start the market maker bot
+echo "Starting market maker bot..."
+python3 -m src.bot.main &
+BOT_PID=$!
+echo "Market maker bot started with PID: $BOT_PID"
 
-echo "Market maker bot started with PID: $PYTHON_PID"
-
-# Wait for the Python process to finish
-wait "$PYTHON_PID"
-EXIT_CODE=$?
-
-echo "Market maker bot finished with exit code: $EXIT_CODE"
-exit $EXIT_CODE
+# Wait for the bot process
+wait $BOT_PID

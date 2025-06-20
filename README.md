@@ -245,14 +245,14 @@ Example:
 
 ### Bot Cycle Simulation
 
-Use the `simulate_bot_cycle.py` script to see exactly what the bot would do in one market-making cycle:
+Use the `scripts/simulate_bot_cycle.py` script to see exactly what the bot would do in one market-making cycle:
 
 ```bash
 # Simulate with default config
-python3 simulate_bot_cycle.py
+python3 scripts/simulate_bot_cycle.py
 
 # Simulate with specific config
-python3 simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
+python3 scripts/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
 ```
 
 The simulation shows:
@@ -308,17 +308,20 @@ If you prefer manual setup over the script:
 ```bash
 # 1. Configure
 cp config.yaml.example config.yaml
+cp docker-compose.yml.example docker-compose.yml
 # Edit config.yaml with your API credentials
 
 # 2. Build and run
 docker compose up -d --build
 
 # 3. Check logs
-docker logs -f market-maker-0l
+docker logs -f market-maker-manual
 
 # 4. Stop
 docker compose down
 ```
+
+**Note**: Manual setup creates a single instance without the management features. For multiple trading pairs or easier management, use the `market_maker_manager.sh` script instead.
 
 ## Important Notes
 

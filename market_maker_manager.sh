@@ -278,17 +278,17 @@ manage_instance() {
                     echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
                     echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
                     
-                    # Check if simulate_bot_cycle.py exists
-                    if [ -f "simulate_bot_cycle.py" ]; then
+                    # Check if scripts/simulate_bot_cycle.py exists
+                    if [ -f "scripts/simulate_bot_cycle.py" ]; then
                         # Run the simulation
-                        python3 simulate_bot_cycle.py "$config_file"
+                        python3 scripts/simulate_bot_cycle.py "$config_file"
                         
                         echo -e "\n${GREEN}Simulation complete!${NC}"
                         echo -e "${BLUE}This can help diagnose configuration issues.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
                     else
-                        echo -e "${RED}Error: simulate_bot_cycle.py not found!${NC}"
+                        echo -e "${RED}Error: scripts/simulate_bot_cycle.py not found!${NC}"
                         echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
@@ -427,17 +427,17 @@ manage_instance() {
                     echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
                     echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
                     
-                    # Check if simulate_bot_cycle.py exists
-                    if [ -f "simulate_bot_cycle.py" ]; then
+                    # Check if scripts/simulate_bot_cycle.py exists
+                    if [ -f "scripts/simulate_bot_cycle.py" ]; then
                         # Run the simulation
-                        python3 simulate_bot_cycle.py "$config_file"
+                        python3 scripts/simulate_bot_cycle.py "$config_file"
                         
                         echo -e "\n${GREEN}Simulation complete!${NC}"
                         echo -e "${BLUE}This shows exactly what orders the bot would place with current market conditions.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
                     else
-                        echo -e "${RED}Error: simulate_bot_cycle.py not found!${NC}"
+                        echo -e "${RED}Error: scripts/simulate_bot_cycle.py not found!${NC}"
                         echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
@@ -1289,17 +1289,17 @@ EOF
                 echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
                 echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
                 
-                # Check if simulate_bot_cycle.py exists
-                if [ -f "simulate_bot_cycle.py" ]; then
+                # Check if scripts/simulate_bot_cycle.py exists
+                if [ -f "scripts/simulate_bot_cycle.py" ]; then
                     # Run the simulation
-                    python3 simulate_bot_cycle.py "$config_file"
+                    python3 scripts/simulate_bot_cycle.py "$config_file"
                     
                     echo -e "\n${GREEN}Simulation complete!${NC}"
                     echo -e "${BLUE}This shows what would happen if you recreate this bot.${NC}"
                     echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                     read
                 else
-                    echo -e "${RED}Error: simulate_bot_cycle.py not found!${NC}"
+                    echo -e "${RED}Error: scripts/simulate_bot_cycle.py not found!${NC}"
                     echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
                     echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                     read

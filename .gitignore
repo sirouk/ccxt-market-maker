@@ -1,8 +1,12 @@
 # Configuration files with API credentials
 config.yaml
-configs/
-*.yaml
+docker-compose.yml
+configs/*-config.yaml
+configs/*-docker-compose.yml
+
+# Keep example files
 !config.yaml.example
+!docker-compose.yml.example
 
 # Data and logs
 data/

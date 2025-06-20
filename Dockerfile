@@ -2,20 +2,21 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
-
-# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copy everything
 COPY . .
 
 # Create data directory
 RUN mkdir -p /app/data
 
+# Set Python path to include src directory
+ENV PYTHONPATH=/app:$PYTHONPATH
+
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
 
-# Run the entrypoint script
+# Run via entrypoint
 ENTRYPOINT ["./entrypoint.sh"]
