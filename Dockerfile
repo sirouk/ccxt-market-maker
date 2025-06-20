@@ -4,33 +4,17 @@ FROM python:3.12-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
-
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Create virtual environment with Python 3.12
-RUN uv venv --python 3.12 --seed
-
-# Install Python dependencies in the virtual environment
-RUN . .venv/bin/activate && \
-    uv pip install -r requirements.txt
+# Create virtual environment using system Python and install packages
+RUN python -m venv .venv && \
+    .venv/bin/pip install --upgrade pip && \
+    .venv/bin/pip install -r requirements.txt && \
+    .venv/bin/python -c "import ccxt; print('ccxt version:', ccxt.__version__)"
 
 # Copy application code
 COPY . .
-
-# Create data directory
-RUN mkdir -p /app/data
-
-# Set Python path to include src directory
-ENV PYTHONPATH=/app:$PYTHONPATH
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
