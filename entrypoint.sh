@@ -4,6 +4,14 @@ set -e
 # Ensure data directory exists
 mkdir -p /app/data
 
+# Activate virtual environment if it exists
+if [ -f "/app/.venv/bin/activate" ]; then
+    source /app/.venv/bin/activate
+    echo "Virtual environment activated"
+else
+    echo "Warning: Virtual environment not found, using system Python"
+fi
+
 # Function to handle shutdown
 shutdown() {
     echo "Received shutdown signal, stopping market maker..."
@@ -32,7 +40,7 @@ trap shutdown SIGTERM SIGINT
 
 # Start the market maker bot
 echo "Starting market maker bot..."
-python3 -m src.bot.main &
+python -m src.bot.main &
 BOT_PID=$!
 echo "Market maker bot started with PID: $BOT_PID"
 

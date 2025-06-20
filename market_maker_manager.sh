@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Ensure PATH includes uv installation directory
+export PATH="$HOME/.local/bin:$PATH"
+
+# Activate virtual environment if it exists (for non-Docker runs)
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+fi
+
 # Colors for better output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -20,6 +28,37 @@ fi
 
 # Function to install prerequisites silently
 install_prerequisites() {
+    # Check if uv is installed
+    if ! command -v uv &> /dev/null; then
+        echo -e "${YELLOW}Installing uv package manager...${NC}"
+        curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+        export PATH="$HOME/.local/bin:$PATH"
+        echo -e "${GREEN}uv installed successfully!${NC}"
+    fi
+    
+    # Check if virtual environment exists
+    if [ ! -d ".venv" ]; then
+        echo -e "${YELLOW}Creating Python 3.12 virtual environment...${NC}"
+        uv venv --python 3.12 --seed
+        echo -e "${GREEN}Virtual environment created!${NC}"
+    fi
+    
+    # Activate virtual environment
+    if [ -f ".venv/bin/activate" ]; then
+        source .venv/bin/activate
+        echo -e "${GREEN}Virtual environment activated!${NC}"
+    else
+        echo -e "${RED}Error: Could not find virtual environment!${NC}"
+        exit 1
+    fi
+    
+    # Check if required packages are installed in venv
+    if ! python -c "import ccxt" &> /dev/null; then
+        echo -e "${YELLOW}Installing Python dependencies in virtual environment...${NC}"
+        uv pip install -r requirements.txt > /dev/null 2>&1
+        echo -e "${GREEN}Dependencies installed successfully!${NC}"
+    fi
+    
     # Check if bc is installed (needed for calculations)
     if ! command -v bc &> /dev/null; then
         echo -e "${YELLOW}Installing bc calculator...${NC}"
@@ -278,17 +317,17 @@ manage_instance() {
                     echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
                     echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
                     
-                    # Check if scripts/simulate_bot_cycle.py exists
-                    if [ -f "scripts/simulate_bot_cycle.py" ]; then
+                    # Check if tests/simulate_bot_cycle.py exists
+                    if [ -f "tests/simulate_bot_cycle.py" ]; then
                         # Run the simulation
-                        python3 scripts/simulate_bot_cycle.py "$config_file"
+                        python tests/simulate_bot_cycle.py "$config_file"
                         
                         echo -e "\n${GREEN}Simulation complete!${NC}"
                         echo -e "${BLUE}This can help diagnose configuration issues.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
                     else
-                        echo -e "${RED}Error: scripts/simulate_bot_cycle.py not found!${NC}"
+                        echo -e "${RED}Error: tests/simulate_bot_cycle.py not found!${NC}"
                         echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
@@ -427,17 +466,17 @@ manage_instance() {
                     echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
                     echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
                     
-                    # Check if scripts/simulate_bot_cycle.py exists
-                    if [ -f "scripts/simulate_bot_cycle.py" ]; then
+                    # Check if tests/simulate_bot_cycle.py exists
+                    if [ -f "tests/simulate_bot_cycle.py" ]; then
                         # Run the simulation
-                        python3 scripts/simulate_bot_cycle.py "$config_file"
+                        python tests/simulate_bot_cycle.py "$config_file"
                         
                         echo -e "\n${GREEN}Simulation complete!${NC}"
                         echo -e "${BLUE}This shows exactly what orders the bot would place with current market conditions.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
                     else
-                        echo -e "${RED}Error: scripts/simulate_bot_cycle.py not found!${NC}"
+                        echo -e "${RED}Error: tests/simulate_bot_cycle.py not found!${NC}"
                         echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
                         echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                         read
@@ -1289,17 +1328,17 @@ EOF
                 echo -e "${YELLOW}This is a dry run - no actual orders will be placed.${NC}"
                 echo -e "${YELLOW}The simulation shows what the bot would do in one market cycle.${NC}\n"
                 
-                # Check if scripts/simulate_bot_cycle.py exists
-                if [ -f "scripts/simulate_bot_cycle.py" ]; then
+                # Check if tests/simulate_bot_cycle.py exists
+                if [ -f "tests/simulate_bot_cycle.py" ]; then
                     # Run the simulation
-                    python3 scripts/simulate_bot_cycle.py "$config_file"
+                    python tests/simulate_bot_cycle.py "$config_file"
                     
                     echo -e "\n${GREEN}Simulation complete!${NC}"
                     echo -e "${BLUE}This shows what would happen if you recreate this bot.${NC}"
                     echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                     read
                 else
-                    echo -e "${RED}Error: scripts/simulate_bot_cycle.py not found!${NC}"
+                    echo -e "${RED}Error: tests/simulate_bot_cycle.py not found!${NC}"
                     echo -e "${YELLOW}Make sure you're running this from the project directory.${NC}"
                     echo -e "\n${YELLOW}Press Enter to continue...${NC}"
                     read

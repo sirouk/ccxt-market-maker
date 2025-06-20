@@ -33,6 +33,8 @@ The easiest way to get started is using our interactive setup script:
 ```
 
 This script will:
+- ✅ Automatically install uv package manager and Python 3.12
+- ✅ Create and manage a virtual environment with all dependencies
 - ✅ Automatically install Docker and prerequisites
 - ✅ Guide you through setting up your market maker
 - ✅ Help manage multiple trading pairs
@@ -85,6 +87,31 @@ This allows you to:
 - Modify any bot parameter without losing order history
 
 ---
+
+## Development Environment
+
+If you want to work on the code or run the bot outside of Docker:
+
+```bash
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.bashrc
+
+# Create Python 3.12 virtual environment
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+
+# Install dependencies
+uv pip install -r requirements.txt
+
+# Run the bot directly
+python -m src.bot.main
+
+# Run simulations
+python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
+```
+
+The virtual environment ensures consistent Python version and isolated dependencies.
 
 ## Prerequisites
 
@@ -245,14 +272,14 @@ Example:
 
 ### Bot Cycle Simulation
 
-Use the `scripts/simulate_bot_cycle.py` script to see exactly what the bot would do in one market-making cycle:
+Use the `tests/simulate_bot_cycle.py` script to see exactly what the bot would do in one market-making cycle:
 
 ```bash
 # Simulate with default config
-python3 scripts/simulate_bot_cycle.py
+python tests/simulate_bot_cycle.py
 
 # Simulate with specific config
-python3 scripts/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
+python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
 ```
 
 The simulation shows:
