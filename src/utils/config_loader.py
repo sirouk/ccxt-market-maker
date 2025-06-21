@@ -5,6 +5,9 @@ import sys
 import yaml
 from decimal import Decimal
 from src.models.config import Config
+import logging
+
+logger = logging.getLogger('ConfigLoader')
 
 
 # Backwards compatibility function
@@ -33,7 +36,7 @@ def load_config(config_path: str = None) -> Config:
         print("Error: API_KEY and API_SECRET environment variables must be set")
         sys.exit(1)
 
-    return Config(
+    config = Config(
         api_key=api_key,
         api_secret=api_secret,
         db_path=os.getenv('DB_PATH', 'market_maker.db'),
@@ -52,6 +55,20 @@ def load_config(config_path: str = None) -> Config:
         out_of_range_pricing_fallback=os.getenv('OUT_OF_RANGE_PRICING_FALLBACK', 'true').lower() == 'true',
         out_of_range_price_mode=os.getenv('OUT_OF_RANGE_PRICE_MODE', 'vwap')
     )
+    
+    # Validate max_orderbook_deviation vs grid configuration
+    if config.max_orderbook_deviation > 0:
+        max_grid_spread = config.grid_spread * config.grid_levels
+        if config.max_orderbook_deviation < max_grid_spread:
+            logger.warning(
+                f"⚠️  WARNING: max_orderbook_deviation ({float(config.max_orderbook_deviation):.3f}) is less than "
+                f"the maximum grid spread ({float(max_grid_spread):.3f} = {config.grid_levels} levels × {float(config.grid_spread):.3f} spread). "
+                f"This will cause the bot to filter out its own orders! "
+                f"Consider setting max_orderbook_deviation to at least {float(max_grid_spread * Decimal('1.2')):.3f} "
+                f"(20% above max grid spread) to avoid conflicts."
+            )
+    
+    return config
 
 
 if __name__ == '__main__':

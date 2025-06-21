@@ -752,6 +752,37 @@ reconfigure_instance() {
     read -p "Max orderbook deviation (0-1) [${current_max_deviation}]: " max_deviation
     max_deviation=${max_deviation:-$current_max_deviation}
     
+    # Validate max_deviation
+    if [[ "$max_deviation" != "0" ]] && (( $(echo "$max_deviation < 0" | bc -l) )); then
+        echo -e "${YELLOW}Invalid deviation, using default 0.1 (10%)${NC}"
+        max_deviation=0.1
+    fi
+    
+    # Validate max_deviation vs grid configuration to prevent bot fighting itself
+    if [[ "$max_deviation" != "0" ]]; then
+        max_grid_spread=$(echo "scale=6; $grid_spread * $grid_levels" | bc -l)
+        if (( $(echo "$max_deviation < $max_grid_spread" | bc -l) )); then
+            echo
+            echo -e "${RED}⚠️  WARNING: Configuration conflict detected!${NC}"
+            echo -e "${YELLOW}Your max_orderbook_deviation (${max_deviation}) is less than the maximum grid spread (${max_grid_spread})${NC}"
+            echo -e "${YELLOW}This means the bot will filter out its own orders as outliers!${NC}"
+            echo
+            echo -e "${BLUE}Grid calculation:${NC}"
+            echo -e "  Grid levels: ${grid_levels}"
+            echo -e "  Grid spread: ${grid_spread}"
+            echo -e "  Furthest order distance: ${grid_levels} × ${grid_spread} = ${max_grid_spread} ($(echo "scale=1; $max_grid_spread * 100" | bc)%)"
+            echo
+            echo -e "${GREEN}Recommended minimum max_orderbook_deviation: $(echo "scale=6; $max_grid_spread * 1.2" | bc -l) (20% above max grid spread)${NC}"
+            echo
+            read -p "Do you want to adjust max_orderbook_deviation? (yes/no): " adjust_deviation
+            if [[ "$adjust_deviation" == "yes" ]]; then
+                suggested_deviation=$(echo "scale=6; $max_grid_spread * 1.2" | bc -l)
+                read -p "Enter new max_orderbook_deviation [${suggested_deviation}]: " new_deviation
+                max_deviation=${new_deviation:-$suggested_deviation}
+            fi
+        fi
+    fi
+    
     echo
     echo -e "${YELLOW}Reference price source for outlier filtering${NC}"
     echo "  1. vwap (Volume Weighted Average Price - most reliable)"
@@ -1096,6 +1127,31 @@ create_new_instance() {
     if [[ "$max_deviation" != "0" ]] && (( $(echo "$max_deviation < 0" | bc -l) )); then
         echo -e "${YELLOW}Invalid deviation, using default 0.1 (10%)${NC}"
         max_deviation=0.1
+    fi
+    
+    # Validate max_deviation vs grid configuration to prevent bot fighting itself
+    if [[ "$max_deviation" != "0" ]]; then
+        max_grid_spread=$(echo "scale=6; $grid_spread * $grid_levels" | bc -l)
+        if (( $(echo "$max_deviation < $max_grid_spread" | bc -l) )); then
+            echo
+            echo -e "${RED}⚠️  WARNING: Configuration conflict detected!${NC}"
+            echo -e "${YELLOW}Your max_orderbook_deviation (${max_deviation}) is less than the maximum grid spread (${max_grid_spread})${NC}"
+            echo -e "${YELLOW}This means the bot will filter out its own orders as outliers!${NC}"
+            echo
+            echo -e "${BLUE}Grid calculation:${NC}"
+            echo -e "  Grid levels: ${grid_levels}"
+            echo -e "  Grid spread: ${grid_spread}"
+            echo -e "  Furthest order distance: ${grid_levels} × ${grid_spread} = ${max_grid_spread} ($(echo "scale=1; $max_grid_spread * 100" | bc)%)"
+            echo
+            echo -e "${GREEN}Recommended minimum max_orderbook_deviation: $(echo "scale=6; $max_grid_spread * 1.2" | bc -l) (20% above max grid spread)${NC}"
+            echo
+            read -p "Do you want to adjust max_orderbook_deviation? (yes/no): " adjust_deviation
+            if [[ "$adjust_deviation" == "yes" ]]; then
+                suggested_deviation=$(echo "scale=6; $max_grid_spread * 1.2" | bc -l)
+                read -p "Enter new max_orderbook_deviation [${suggested_deviation}]: " new_deviation
+                max_deviation=${new_deviation:-$suggested_deviation}
+            fi
+        fi
     fi
     
     # Calculate funding requirements
