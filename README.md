@@ -1,445 +1,282 @@
 # Delta-Neutral Market Maker Bot
 
-A market-making bot that provides liquidity on centralized exchanges (CEXs) using a delta-neutral strategy to improve order book depth and user experience.
+**Automated liquidity provision for cryptocurrency exchanges** - Set it up in minutes, let it handle the complexity.
 
+## 🎯 What This Does
 
-## What This Does
+This bot automatically:
+- Places buy & sell orders around the market price
+- Maintains balanced inventory between two currencies
+- Adjusts to market movements intelligently
+- Protects against extreme price outliers
 
-This bot:
-- **Provides Liquidity**: Places buy and sell orders around the market price to improve order book depth
-- **Delta-Neutral Strategy**: Maintains a balanced inventory between base and quote currencies to minimize directional risk
-- **Improves Trading UX**: Creates tighter spreads and better liquidity for traders on the exchange
-- **Automated Rebalancing**: Adjusts order sizes to maintain your target inventory ratio
-- **Smart Order Filtering**: Ignores outlier orders that could distort market pricing
+**Perfect for**: Exchange liquidity providers, token projects, and traders earning from spreads.
 
-Perfect for:
-- Exchange partners providing liquidity
-- Traders wanting to earn from spreads while minimizing directional exposure
-- Projects looking to improve liquidity for their tokens
+## 🚀 Quick Start (2 Minutes)
 
-
-## 🚀 Quick Start (Recommended)
-
-Grab the code:
 ```bash
-cd $HOME
+# 1. Get the code
 git clone https://github.com/sirouk/ccxt-market-maker
-cd ./ccxt-market-maker
-```
+cd ccxt-market-maker
 
-The easiest way to get started is using our interactive setup script:
-```bash
+# 2. Run the manager
 ./market_maker_manager.sh
+
+# 3. Follow the prompts
+# - Choose "Create new instance"
+# - Enter your token (e.g., "ATOM")
+# - Enter API credentials
+# - Use defaults (they're good!)
+# - Fund your account
+# Done! Your bot is running.
 ```
 
-This script will:
-- ✅ Automatically install uv package manager and Python 3.12
-- ✅ Create and manage a virtual environment with all dependencies
-- ✅ Automatically install Docker and prerequisites
-- ✅ Guide you through setting up your market maker
-- ✅ Help manage multiple trading pairs
-- ✅ Import API credentials from existing setups (no need to re-enter)
-- ✅ Smart API key management (same key works for different tokens, prevents duplicates)
-- ✅ Graceful shutdown (automatically cancels all orders when stopping)
-- ✅ Handle all the technical details for you
+That's it! The bot handles all the complexity automatically. 
 
-### Quick Example
+## 🔧 How It Works (Simply)
 
-1. Run: `./market_maker_manager.sh`
-2. Choose "Create new instance"
-3. Enter your coin (e.g., "ATOM")
-4. Enter your LAToken API credentials (or import from existing setup)
-5. Use default settings or customize
-6. Fund your account as instructed
-7. Your bot starts providing liquidity!
+1. **You set a token pair** (e.g., ATOM/USDT)
+2. **Bot places orders** above and below current price
+3. **Orders fill** = You earn the spread
+4. **Bot replaces filled orders** automatically
+5. **Inventory stays balanced** via smart adjustments
 
-**API Key Usage:**
-- ✅ **Same API key for different tokens**: ATOM/USDT + LBR/USDT (allowed)
-- ❌ **Same API key for same token twice**: ATOM-1 + ATOM-2 (prevented)
-- 💡 **Multiple trading pairs**: One API key can run many different token pairs
+## 📊 What Makes This Smart
 
-### Manager Features
+### Automatic Features (No Configuration Needed!)
 
-The management script now includes a **simulation feature** for all instances:
+#### 🎯 **Grid Stability**
+- Bot only updates orders when price moves significantly
+- Reduces unnecessary API calls and fees
+- Settings auto-calculate based on your grid spread
 
-1. Select any instance (running, stopped, or orphaned)
-2. Choose option 6: **"Run simulation (dry run)"**
-3. See exactly what the bot would do without placing real orders
+#### ⚖️ **Inventory Balance**
+- Maintains your target ratio (default 50/50)
+- Increases buy orders when low on tokens
+- Increases sell orders when high on tokens
 
-This is perfect for:
-- Testing configurations before going live
-- Diagnosing issues with stopped containers
-- Understanding the bot's pricing logic
-- Verifying your balance is sufficient
-- Checking if outlier filtering is working correctly
+#### 🛡️ **Outlier Protection**
+- Ignores extreme orders that could hurt you
+- Uses market average (VWAP) as reference
+- Continues working even if all orders are outliers
 
-**Reconfigure Running Instances**: You can now reconfigure any running instance without recreating it:
+#### 🔄 **Smart Recovery**
+- Gracefully cancels orders when stopping
+- Tracks order settlement properly
+- Restarts from where it left off
 
-1. Select any instance from the manager
-2. Choose option 7: **"Reconfigure"**
-3. Update any parameters (current values shown as defaults)
-4. Bot can be restarted automatically with new settings
+## 💰 Before You Start
 
-This allows you to:
-- Adjust grid levels and spreads on the fly
-- Change outlier filtering settings
-- Update inventory targets
-- Modify any bot parameter without losing order history
+### Funding Requirements
+You need **both currencies** in your account:
+- For ATOM/USDT: Fund with both ATOM and USDT
+- Default ratio is 50/50 (configurable)
+- Account for ~0.2% trading fees
 
----
+### Minimum Amounts
+- Enough for at least one buy order
+- Enough for at least one sell order
+- Start small to test!
 
-## Development Environment
+## 🎛️ Basic Settings
 
-If you want to work on the code or run the bot outside of Docker:
+Most users only need to know these:
+
+| Setting | What It Does | Default | 
+|---------|--------------|---------|
+| `symbol` | Trading pair | ATOM/USDT |
+| `grid_levels` | Orders per side | 3 |
+| `grid_spread` | Space between orders | 0.05% |
+| `min_order_size` | Smallest order | 0.1 |
+
+**Tip**: The defaults work great for most cases!
+
+## 🚦 Using the Manager
+
+The manager script (`./market_maker_manager.sh`) makes everything easy:
+
+### Features
+- ✅ **Multiple Bots**: Run different token pairs
+- ✅ **Import API Keys**: Reuse credentials from other bots
+- ✅ **Live Monitoring**: Check logs and status
+- ✅ **Dry Run Mode**: Test without real orders
+- ✅ **Easy Reconfigure**: Adjust settings on the fly
+
+### Smart API Key Handling
+- ✅ Same key for different tokens (ATOM + LBR)
+- ❌ Prevents duplicate bots for same token
+- 🔄 Import existing keys with one click
+
+## 🧪 Test First!
+
+Always test your configuration:
 
 ```bash
-# Install uv if not already installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.bashrc
+# Run simulation
+python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
 
-# Create Python 3.12 virtual environment
+# See grid behavior  
+python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml --scenarios
+```
+
+Shows exactly what the bot would do without risking funds.
+
+## 🎯 Common Scenarios
+
+### Just Starting?
+Use defaults! They're designed for safety and effectiveness.
+
+### Low Liquidity Token?
+The bot handles thin orderbooks automatically:
+- Falls back to safe prices when needed
+- Creates liquidity where none exists
+- Protects against manipulation
+
+### Volatile Market?
+Built-in protections:
+- Grid stability prevents thrashing
+- Outlier filter ignores extremes  
+- Inventory management reduces risk
+
+### Want Conservative Trading?
+```yaml
+target_inventory_ratio: 0.1  # Hold only 10% in tokens
+grid_spread: 0.01           # Wider spreads
+```
+
+### Want Aggressive Trading?
+```yaml
+grid_levels: 10             # More orders
+grid_spread: 0.002          # Tighter spreads
+```
+
+## 🔍 Advanced Features
+
+<details>
+<summary><b>Click to expand advanced configuration</b></summary>
+
+### All Configuration Options
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `symbol` | Trading pair | ATOM/USDT |
+| `grid_levels` | Number of orders on each side | 3 |
+| `grid_spread` | % distance between price levels | 0.0005 |
+| `min_order_size` | Minimum order size | 0.1 |
+| `max_position` | Maximum position size | 0.5 |
+| `target_inventory_ratio` | Target balance ratio | 0.5 |
+| `inventory_tolerance` | Acceptable deviation | 0.1 |
+| `polling_interval` | Update frequency (seconds) | 8.0 |
+| `max_orderbook_deviation` | Outlier filter threshold | 0.1 |
+| `outlier_filter_reference` | Price reference source | vwap |
+| `out_of_range_pricing_fallback` | Enable fallback pricing | true |
+| `out_of_range_price_mode` | Fallback price source | vwap |
+
+### Grid Stability Details
+
+The bot automatically calculates when to update orders:
+- **Update Threshold** = `grid_spread ÷ 2`
+- **Cooldown Period** = `polling_interval × 3`
+
+This means:
+- Tight grids (0.2% spread) → Updates at 0.1% price moves
+- Normal grids (1% spread) → Updates at 0.5% price moves
+- Wide grids (2% spread) → Updates at 1% price moves
+
+### Outlier Filtering Deep Dive
+
+Reference price options:
+- `vwap`: Volume-weighted average (recommended)
+- `nearest_bid`: Conservative for selling
+- `nearest_ask`: Conservative for buying
+- `ticker_mid`: Simple bid/ask midpoint
+- `last`: Last traded price
+
+The bot excludes its own orders from calculations to prevent feedback loops.
+
+### Fallback Pricing Modes
+
+When all orders are filtered as outliers:
+- `vwap`: Use volume-weighted average
+- `nearest_bid`: Use closest bid price
+- `nearest_ask`: Use closest ask price
+- `auto`: Try multiple sources intelligently
+
+</details>
+
+## 🛠️ Development Setup
+
+<details>
+<summary><b>Click to expand development setup</b></summary>
+
+```bash
+# Install uv package manager
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create Python environment
 uv venv --python 3.12 --seed
 source .venv/bin/activate
 
 # Install dependencies
 uv pip install -r requirements.txt
 
-# Run the bot directly
+# Run directly
 python -m src.bot.main
-
-# Run simulations
-python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
 ```
 
-The virtual environment ensures consistent Python version and isolated dependencies.
+</details>
 
-## Prerequisites
+## ⚠️ Important Notes
 
-### Account Funding
-
-**IMPORTANT**: You must fund your exchange account with both currencies before starting.
-
-The bot maintains a target ratio between currencies (default 50/50):
-- **ATOM/USDT with 50% ratio**: Fund with 50% ATOM, 50% USDT value
-- **ETH/USDT with 30% ratio**: Fund with 30% ETH, 70% USDT value
-
-**Minimum Requirements:**
-- Enough base currency for at least one sell order
-- Enough quote currency for at least one buy order
-- Account for trading fees (typically 0.1-0.2%)
-
-**Safety Features:**
-- 🛡️ **Graceful Shutdown**: When you stop the bot, it automatically cancels all open orders before shutting down
-- 🔄 **Smart Recovery**: Can restart from where it left off if temporarily stopped
-
-## Configuration
-
-Key parameters in `config.yaml`:
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `symbol` | Trading pair (e.g., ATOM/USDT) | ATOM/USDT |
-| `grid_levels` | Number of orders on each side | 3 |
-| `grid_spread` | % distance between price levels | 0.0005 (0.05%) |
-| `min_order_size` | Minimum order size | 0.1 |
-| `max_position` | Maximum position size | 0.5 |
-| `target_inventory_ratio` | Target balance ratio (0.5 = 50/50) | 0.5 |
-| `inventory_tolerance` | Acceptable deviation from target | 0.1 |
-| `polling_interval` | Update frequency (seconds) | 8.0 |
-| `max_orderbook_deviation` | Filter orders beyond % from reference price | 0.1 (10%) |
-| `outlier_filter_reference` | Price source for outlier filtering anchor | vwap |
-| `out_of_range_pricing_fallback` | Enable fallback pricing when all orders filtered | true |
-| `out_of_range_price_mode` | Fallback price source when all orders out of range | vwap |
-
-### How It Works
-
-1. **Grid Trading**: Places orders at multiple price levels above and below market price
-2. **Inventory Management**: Automatically adjusts order sizes to maintain target ratio
-3. **Continuous Rebalancing**: As orders fill, new ones are placed to maintain liquidity
-4. **Outlier Protection**: Filters out extreme orders that could distort pricing
-5. **Smart Grid Stability**: Intelligently maintains order positions during small price movements
-
-Example with default settings:
-- Places 3 buy orders below market price
-- Places 3 sell orders above market price
-- Each level is 0.05% apart
-- Adjusts sizes to maintain 50/50 inventory balance
-- Ignores orders more than 10% from last traded price
-- Grid updates only when price moves significantly (see Grid Stability below)
-
-## Advanced Features
-
-### 🆕 Automatic Grid Stability
-
-The bot now includes **automatic grid stability** that intelligently reduces unnecessary order cancellations based on your existing grid configuration. No new settings required!
-
-**How it works:**
-- **Dynamic Threshold** = `grid_spread ÷ 2`
-  - The grid only updates when price moves **halfway to the next grid level**
-  - For example: If your `grid_spread` is 0.01 (1%), the grid updates when price moves 0.5%
-
-- **Dynamic Cooldown** = `polling_interval × 3`
-  - Prevents rapid updates during volatile periods
-  - For example: If `polling_interval` is 5 seconds, there's a 15-second cooldown between updates
-
-**Benefits:**
-- ✅ **Zero configuration** - works automatically with your existing settings
-- ✅ **Reduced API calls** - fewer order cancellations and placements
-- ✅ **Better fill rates** - orders stay in place longer
-- ✅ **Natural scaling** - wider grids are naturally more stable
-
-**Examples:**
-- **Tight grid** (`grid_spread: 0.002`): Updates at 0.1% price movement
-- **Normal grid** (`grid_spread: 0.01`): Updates at 0.5% price movement  
-- **Wide grid** (`grid_spread: 0.02`): Updates at 1% price movement
-
-**Log Messages:**
-```
-Grid stable: Price change 0.23% < threshold 0.50%
-Grid update triggered: Price moved 0.67% (threshold: 0.50% = grid_spread/2)
-Grid update cooldown active: 8.2s / 15.0s
-```
-
-This creates a natural balance where your grid configuration automatically determines the appropriate stability behavior!
-
-### Outlier Filtering
-
-The bot can filter out extreme outlier orders that are far from the current market price:
-
-```yaml
-max_orderbook_deviation: 0.1  # Filter orders >10% from reference price
-outlier_filter_reference: vwap  # What price to use as "fair value"
-```
-
-**How it works:**
-1. Bot determines a reference price based on `outlier_filter_reference`
-2. Calculates allowed price range: `reference ± (reference × max_orderbook_deviation)`
-3. Filters out any orders outside this range
-4. If all orders are filtered out, uses `out_of_range_price_mode` as fallback
-
-**Reference Price Options:**
-- `vwap`: Volume Weighted Average Price (most reliable, reflects actual trading)
-- `nearest_bid`: Finds the bid closest to VWAP and uses that as reference (good for conservative selling)
-- `nearest_ask`: Finds the ask closest to VWAP and uses that as reference (good for conservative buying)
-- `ticker_mid`: Mid-point between ticker bid/ask spreads
-- `last`: Last traded price (can be stale on illiquid markets)
-
-**Important**: When using `nearest_bid` or `nearest_ask`, the bot first determines a stable reference (VWAP) and then finds the actual bid/ask closest to that reference. This prevents the bot from being misled by extreme outlier orders.
-
-**Self-Order Exclusion**: The bot automatically excludes its own orders from all price calculations and filtering. This prevents feedback loops where the bot would react to its own orders, ensuring it always follows the real market instead of creating its own price levels.
-
-### Out-of-Range Price Fallback
-
-**This feature only applies when:**
-1. `max_orderbook_deviation` > 0 (outlier filtering is enabled)
-2. ALL bids and asks fall outside the configured tolerance
-3. `out_of_range_pricing_fallback` is set to true
-
-When all orders are filtered out as outliers, the bot needs a fallback price source to continue market making. Without this fallback, the bot would stop placing orders entirely.
-
-```yaml
-out_of_range_pricing_fallback: true  # Enable fallback when all orders filtered
-out_of_range_price_mode: vwap  # Options: 'vwap', 'nearest_bid', 'nearest_ask', 'auto'
-```
-
-#### Available Fallback Modes:
-
-1. **VWAP Mode** (default, safest):
-   - Uses Volume Weighted Average Price from the exchange
-   - Best for most situations, especially volatile markets
-   - Represents actual trading activity
-
-2. **Nearest Bid Mode**:
-   - Uses the nearest valid bid price (even if outside tolerance)
-   - Conservative for buying (may get better fills)
-   - Good when you trust bid prices more than asks
-
-3. **Nearest Ask Mode**:
-   - Uses the nearest valid ask price (even if outside tolerance)
-   - Conservative for selling (may get better fills)
-   - Good when you trust ask prices more than bids
-
-4. **Auto Mode** (adaptive fallback):
-   - Tries multiple price sources in order:
-     1. VWAP (if available)
-     2. Ticker bid/ask mid-price (if spread < 10x)
-     3. Last traded price
-   - Most flexible, adapts to available data
-   - Good for markets with intermittent data
-
-**Example**: On LAToken with extreme outliers:
-- Normal orderbook mid-price would be: 0.005 (from outlier asks)
-- VWAP: 0.00005153 (actual trading average)
-- Nearest Bid: 0.00001 (80% below VWAP)
-- Nearest Ask: 0.005 (9700% above VWAP!)
-
-Using `out_of_range_price_mode: vwap` protects you from these extremes.
-
-### Directional Bias for Out-of-Range Pricing
-
-When `out_of_range_pricing_fallback` is enabled and all orders are filtered out, the bot can also use **directional bias** to create synthetic orders that help with inventory rebalancing:
-
-- **Too much base currency**: Creates synthetic bid slightly below fallback price (encourages selling)
-- **Too little base currency**: Creates synthetic ask slightly above fallback price (encourages buying)
-- **Within tolerance**: Uses symmetric pricing around fallback price
-
-This ensures the bot continues to work toward your target inventory ratio even when the entire orderbook is unusable.
-
-**How it works:**
-1. All real orderbook orders are filtered out as outliers
-2. Bot calculates a fallback price using your configured `out_of_range_price_mode`
-3. Bot checks your current inventory ratio
-4. Places synthetic orders at prices that favor rebalancing
-5. Helps maintain your target ratio even in extreme market conditions
-
-### Inventory Management
-
-The bot automatically adjusts order sizes to maintain your target inventory ratio:
-
-- **Target Ratio**: Set `target_inventory_ratio` (0.5 = 50/50 balance)
-- **Tolerance**: Set `inventory_tolerance` for acceptable deviation
-- **Dynamic Adjustment**: Increases buy orders when low on base currency, increases sell orders when high
-
-Example:
-- Current: 60% ATOM, 40% USDT
-- Target: 50% ATOM, 50% USDT
-- Result: Bot increases sell order sizes and decreases buy order sizes
-
-### Bot Cycle Simulation
-
-Use the `tests/simulate_bot_cycle.py` script to see exactly what the bot would do in one market-making cycle:
-
-```bash
-# Simulate with default config
-python tests/simulate_bot_cycle.py
-
-# Simulate with specific config
-python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
-
-# Show grid stability scenarios
-python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml --scenarios
-```
-
-The simulation shows:
-1. **Market Data Fetching**: Current ticker, orderbook, and balances
-2. **Outlier Filtering**: Which orders are filtered and why
-3. **Price Calculation**: How the mid-price is determined
-4. **🆕 Grid Stability Check**: Whether the grid would update based on price movement
-5. **Inventory Analysis**: Current vs target ratios
-6. **Order Grid Generation**: All orders that would be created
-7. **Execution Plan**: Which orders can actually be placed with current balances
-
-The `--scenarios` flag shows how the grid would react to different price movements:
-- Small movements that don't trigger updates
-- Movements near the threshold
-- Large movements that would update the grid
-
-This is useful for:
-- Testing configurations before running the bot
-- Understanding the bot's decision-making process
-- Debugging issues with order placement
-- Verifying outlier filtering is working correctly
-- **🆕 Seeing grid stability behavior in action**
-
-### Low Liquidity Markets
-
-For markets with thin orderbooks or many outlier orders:
-
-1. **Automatic Fallback**: If filtering removes all bids or asks, the bot automatically uses the last traded price
-2. **Grid Generation**: Still creates full buy/sell grids even with incomplete orderbooks
-3. **Price Discovery**: Helps establish proper price levels in illiquid markets
-
-### Conservative Inventory Management
-
-For tokens where you want minimal exposure:
-
-```yaml
-target_inventory_ratio: 0.01    # Hold only 1% in base currency
-inventory_tolerance: 0.005      # Very tight tolerance
-```
-
-This is useful for:
-- High volatility tokens
-- Initial market making with limited capital
-- Testing new markets
-
-### Aggressive Market Making
-
-For deeper liquidity provision:
-
-```yaml
-grid_levels: 20                 # 20 orders each side
-grid_spread: 0.002              # 0.2% between levels
-max_position: 10000000          # Large position limit
-```
-
-## Manual Setup
-
-If you prefer manual setup over the script:
-
-```bash
-# 1. Configure
-cp config.yaml.example config.yaml
-cp docker-compose.yml.example docker-compose.yml
-# Edit config.yaml with your API credentials
-
-# 2. Build and run
-docker compose up -d --build
-
-# 3. Check logs
-docker logs -f market-maker-manual
-
-# 4. Stop
-docker compose down
-```
-
-**Note**: Manual setup creates a single instance without the management features. For multiple trading pairs or easier management, use the `market_maker_manager.sh` script instead.
-
-## Important Notes
-
-- **Network Mode**: Uses Docker host network for reliability
-- **Data Storage**: Logs and database stored in `./data/`
-- **Multiple Instances**: Each coin pair runs in its own container
-- **Risk Management**: Always start with small amounts to test
-- **Order Precision**: The bot handles extreme price precision automatically
-
-## ⚠️ Risks
-
-- **Market Risk**: Prices can move against your inventory
-- **Technical Risk**: Software/network issues can cause losses
-- **Exchange Risk**: API issues or exchange problems
-- **Liquidity Risk**: May be difficult to exit positions in thin markets
-
-**Best Practices:**
+### Risks
+- Market prices can move against you
+- Technical issues can cause losses
 - Start small and monitor closely
-- Set appropriate `max_position` limits
-- Understand exchange fee structure
-- Use outlier filtering for markets with extreme orders
 - Never invest more than you can afford to lose
 
-## Troubleshooting
+### Best Practices
+1. **Start Small**: Test with minimal amounts
+2. **Monitor Initially**: Watch the first few hours
+3. **Check Logs**: Use manager to view activity
+4. **Set Limits**: Use `max_position` wisely
 
-**Common Issues:**
+## 🆘 Troubleshooting
 
-- **"Permission denied"**: Run `chmod +x market_maker_manager.sh`
-- **"Cannot connect"**: Check API credentials and permissions
-- **"Insufficient balance"**: Ensure you funded both currencies
-- **Container stopped**: Check logs with management script
-- **Wrong price levels**: Check if outlier filtering is needed
+**Bot not placing orders?**
+- Check funding (need both currencies)
+- Verify API permissions
+- Look for outlier filtering in logs
 
-**View Logs:**
+**Orders at wrong prices?**
+- Normal if market has outliers
+- Check logs for "filtered" messages
+- Adjust `max_orderbook_deviation` if needed
+
+**Container stopped?**
+- Use manager option 5 to check logs
+- Usually insufficient balance
+- Option 2 to restart
+
+## 📝 Quick Reference
+
+### Manager Commands
 ```bash
-docker logs ccxt-delta-neutral-[coin]-[number]
+./market_maker_manager.sh  # Start manager
+# Then choose:
+# 1-N) Manage existing bot
+# Create new instance
+# View logs
+# Run simulation
+# Reconfigure
 ```
 
-**Check for Outlier Orders:**
-If the bot places orders at unexpected prices, check logs for:
+### Manual Docker Commands
+```bash
+docker logs ccxt-delta-neutral-atom-1     # View logs
+docker restart ccxt-delta-neutral-atom-1  # Restart
+docker stop ccxt-delta-neutral-atom-1     # Stop (cancels orders)
 ```
-Orderbook filtered: X bids, Y asks (removed Z outlier bids, W outlier asks)
-```
 
-This indicates outlier filtering is working correctly.
+---
 
-## License
-
-This software is provided as-is. Use at your own risk. Always test with small amounts first.
+**Remember**: The bot handles the complexity. You just need to fund your account and let it run! 🚀

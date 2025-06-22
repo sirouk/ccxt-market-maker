@@ -328,6 +328,16 @@ class BotCycleSimulator:
             return True
         else:
             print(f"\n❌ Grid stable: Price change below threshold")
+            print("\n🎯 GRID MANAGEMENT:")
+            print("  Only orders outside acceptable range would be cancelled:")
+            # Calculate furthest grid positions
+            grid_levels = self.bot_config['grid_levels']
+            furthest_spread = grid_spread * grid_levels
+            min_buy_range = current_mid_price * (Decimal('1') - furthest_spread) * Decimal('0.9')
+            max_sell_range = current_mid_price * (Decimal('1') + furthest_spread) * Decimal('1.1')
+            print(f"  - Buy orders below {min_buy_range:.8f} (10% buffer beyond furthest grid)")
+            print(f"  - Sell orders above {max_sell_range:.8f} (10% buffer beyond furthest grid)")
+            print(f"  - Any orders on wrong side of mid price ({current_mid_price:.8f})")
             return False
 
     def _calculate_inventory(self, mid_price):

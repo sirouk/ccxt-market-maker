@@ -684,12 +684,26 @@ class MarketMakerREST:
             return []
 
     async def cancel_orders_outside_grid(self, grid_orders: List[Tuple[str, Decimal, Decimal]]) -> None:
-        """Cancel any existing orders that are not part of the current grid."""
-        # Create a set of target prices from the grid
-        grid_prices = {price for _, price, _ in grid_orders}
+        """Cancel orders that fall outside the acceptable grid range."""
+        if not grid_orders:
+            return
+            
+        # Find the furthest buy and sell prices in our intended grid
+        buy_prices = [price for side, price, _ in grid_orders if side == 'buy']
+        sell_prices = [price for side, price, _ in grid_orders if side == 'sell']
         
-        # Add some tolerance for price comparison (same as duplicate detection)
-        price_tolerance = Decimal('0.001')  # 0.1%
+        if not buy_prices or not sell_prices:
+            self.logger.debug("Incomplete grid, skipping order cancellation")
+            return
+            
+        min_buy_price = min(buy_prices)
+        max_sell_price = max(sell_prices)
+        
+        # Add a small buffer (10% beyond the furthest grid points) to avoid
+        # cancelling orders that are just slightly outside due to rounding
+        buffer = Decimal('0.1')
+        min_acceptable_price = min_buy_price * (Decimal('1') - buffer)
+        max_acceptable_price = max_sell_price * (Decimal('1') + buffer)
         
         orders_to_cancel = []
         
@@ -699,33 +713,46 @@ class MarketMakerREST:
                 order_price = Decimal(order['price'])
                 order_side = order['side']
                 
-                # Check if this order price matches any grid price within tolerance
-                order_in_grid = False
-                for side, grid_price, _ in grid_orders:
-                    if side == order_side:
-                        price_diff_pct = abs(order_price - grid_price) / grid_price
-                        if price_diff_pct < price_tolerance:
-                            order_in_grid = True
-                            break
+                # Cancel if:
+                # - Buy order is below our minimum acceptable price
+                # - Sell order is above our maximum acceptable price  
+                # - Order is on wrong side of mid price (buy above mid, sell below mid)
+                should_cancel = False
+                cancel_reason = ""
                 
-                if not order_in_grid:
-                    orders_to_cancel.append((order_id, order_price, order_side))
+                if order_side == 'buy' and order_price < min_acceptable_price:
+                    should_cancel = True
+                    cancel_reason = f"buy order too far below grid ({order_price} < {min_acceptable_price})"
+                elif order_side == 'sell' and order_price > max_acceptable_price:
+                    should_cancel = True
+                    cancel_reason = f"sell order too far above grid ({order_price} > {max_acceptable_price})"
+                elif self.grid_anchor_price:
+                    # Cancel orders on wrong side of mid price
+                    if order_side == 'buy' and order_price > self.grid_anchor_price:
+                        should_cancel = True
+                        cancel_reason = f"buy order above mid price ({order_price} > {self.grid_anchor_price})"
+                    elif order_side == 'sell' and order_price < self.grid_anchor_price:
+                        should_cancel = True
+                        cancel_reason = f"sell order below mid price ({order_price} < {self.grid_anchor_price})"
+                
+                if should_cancel:
+                    orders_to_cancel.append((order_id, order_price, order_side, cancel_reason))
                     
             except (InvalidOperation, ConversionSyntax, TypeError, ValueError) as e:
-                self.logger.debug(f"Could not parse order price for cancellation check: {e}")
+                self.logger.debug(f"Could not parse order price for range check: {e}")
                 continue
         
-        # Cancel orders that are outside the grid
+        # Cancel orders that are outside acceptable range
         if orders_to_cancel:
-            self.logger.info(f"Cancelling {len(orders_to_cancel)} orders outside current grid")
-            for order_id, price, side in orders_to_cancel:
-                self.logger.debug(f"Cancelling {side} order at {price} (ID: {order_id})")
+            self.logger.info(f"Cancelling {len(orders_to_cancel)} orders outside acceptable range")
+            for order_id, price, side, reason in orders_to_cancel:
+                self.logger.debug(f"Cancelling {side} order at {price} (ID: {order_id}): {reason}")
                 try:
                     await self.order_manager.cancel_order(order_id)
                 except Exception as e:
                     self.logger.error(f"Failed to cancel order {order_id}: {e}")
         else:
-            self.logger.debug("All existing orders are within the current grid")
+            self.logger.debug("All existing orders are within acceptable range")
 
     async def verify_order_placement(self, order_id: str, max_retries: int = 3) -> bool:
         """

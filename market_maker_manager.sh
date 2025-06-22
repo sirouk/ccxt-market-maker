@@ -817,28 +817,51 @@ reconfigure_instance() {
     echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
     echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
-    read -p "Enable fallback pricing when all orders filtered? (y/n, default y): " enable_fallback
-    out_of_range_pricing_fallback=true
+    # Show current value
+    local current_fallback_display="y"
+    if [[ "$current_pricing_fallback" == "false" ]]; then
+        current_fallback_display="n"
+    fi
+    echo -e "${YELLOW}Current value: ${current_fallback_display}${NC}"
+    read -p "Enable fallback pricing when all orders filtered? (y/n) [${current_fallback_display}]: " enable_fallback
+    # Use current value if user presses Enter
+    enable_fallback=${enable_fallback:-$current_fallback_display}
+    
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
+        # If fallback is disabled, use existing price mode or default
+        out_of_range_price_mode=${current_price_mode:-"vwap"}
+    else
+        out_of_range_pricing_fallback=true
+        
+        echo
+        echo "Out-of-range price mode (when all orders filtered):"
+        echo "  1. vwap (Volume Weighted Average Price - safest)"
+        echo "  2. nearest_bid (Conservative for buying)"
+        echo "  3. nearest_ask (Conservative for selling)"
+        echo "  4. auto (Adaptive - tries all sources)"
+        
+        # Map current value to number
+        local mode_num=1
+        case $current_price_mode in
+            "vwap") mode_num=1 ;;
+            "nearest_bid") mode_num=2 ;;
+            "nearest_ask") mode_num=3 ;;
+            "auto") mode_num=4 ;;
+        esac
+        
+        echo -e "${YELLOW}Current: ${current_price_mode} (option ${mode_num})${NC}"
+        read -p "Select price mode (1-4) [${mode_num}]: " price_mode_choice
+        price_mode_choice=${price_mode_choice:-$mode_num}
+        
+        case $price_mode_choice in
+            1) out_of_range_price_mode="vwap" ;;
+            2) out_of_range_price_mode="nearest_bid" ;;
+            3) out_of_range_price_mode="nearest_ask" ;;
+            4) out_of_range_price_mode="auto" ;;
+            *) out_of_range_price_mode=$current_price_mode ;;
+        esac
     fi
-    
-    echo
-    echo "Out-of-range price mode (when all orders filtered):"
-    echo "  1. vwap (Volume Weighted Average Price - safest)"
-    echo "  2. nearest_bid (Conservative for buying)"
-    echo "  3. nearest_ask (Conservative for selling)"
-    echo "  4. auto (Adaptive - tries all sources)"
-    read -p "Select price mode (1-4, default 1): " price_mode_choice
-    price_mode_choice=${price_mode_choice:-1}
-    
-    case $price_mode_choice in
-        1) out_of_range_price_mode="vwap" ;;
-        2) out_of_range_price_mode="nearest_bid" ;;
-        3) out_of_range_price_mode="nearest_ask" ;;
-        4) out_of_range_price_mode="auto" ;;
-        *) out_of_range_price_mode="vwap" ;;
-    esac
     
     # Create temporary config file with new values
     local temp_config="${config_file}.tmp"
@@ -1062,9 +1085,8 @@ create_new_instance() {
     echo
     echo -e "${YELLOW}Percentage of allowed price deviation from reference (0.1 = 10%)${NC}"
     echo -e "${YELLOW}Set to 0 to disable outlier filtering completely${NC}"
-    echo -e "${YELLOW}Current value: ${current_max_deviation}${NC}"
-    read -p "Max orderbook deviation (0-1) [${current_max_deviation}]: " max_deviation
-    max_deviation=${max_deviation:-$current_max_deviation}
+    read -p "Max orderbook deviation (0-1, default: 0.1): " max_deviation
+    max_deviation=${max_deviation:-0.1}
     
     echo
     echo -e "${YELLOW}Reference price source for outlier filtering${NC}"
@@ -1074,19 +1096,8 @@ create_new_instance() {
     echo "  4. ticker_mid (Mid-point between bid/ask)"
     echo "  5. last (Last traded price)"
     
-    # Map current value to number
-    local ref_num=1
-    case $current_filter_ref in
-        "vwap") ref_num=1 ;;
-        "nearest_bid") ref_num=2 ;;
-        "nearest_ask") ref_num=3 ;;
-        "ticker_mid") ref_num=4 ;;
-        "last") ref_num=5 ;;
-    esac
-    
-    echo -e "${YELLOW}Current: ${current_filter_ref} (option ${ref_num})${NC}"
-    read -p "Select reference price (1-5) [${ref_num}]: " ref_choice
-    ref_choice=${ref_choice:-$ref_num}
+    read -p "Select reference price (1-5, default: 1): " ref_choice
+    ref_choice=${ref_choice:-1}
     
     case $ref_choice in
         1) outlier_filter_reference="vwap" ;;
@@ -1094,34 +1105,57 @@ create_new_instance() {
         3) outlier_filter_reference="nearest_ask" ;;
         4) outlier_filter_reference="ticker_mid" ;;
         5) outlier_filter_reference="last" ;;
-        *) outlier_filter_reference=$current_filter_ref ;;
+        *) outlier_filter_reference="vwap" ;;
     esac
     
     echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
     echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
-    read -p "Enable fallback pricing when all orders filtered? (y/n, default y): " enable_fallback
-    out_of_range_pricing_fallback=true
+    # Show current value
+    local current_fallback_display="y"
+    if [[ "$current_pricing_fallback" == "false" ]]; then
+        current_fallback_display="n"
+    fi
+    echo -e "${YELLOW}Current value: ${current_fallback_display}${NC}"
+    read -p "Enable fallback pricing when all orders filtered? (y/n) [${current_fallback_display}]: " enable_fallback
+    # Use current value if user presses Enter
+    enable_fallback=${enable_fallback:-$current_fallback_display}
+    
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
+        # If fallback is disabled, use existing price mode or default
+        out_of_range_price_mode=${current_price_mode:-"vwap"}
+    else
+        out_of_range_pricing_fallback=true
+        
+        echo
+        echo "Out-of-range price mode (when all orders filtered):"
+        echo "  1. vwap (Volume Weighted Average Price - safest)"
+        echo "  2. nearest_bid (Conservative for buying)"
+        echo "  3. nearest_ask (Conservative for selling)"
+        echo "  4. auto (Adaptive - tries all sources)"
+        
+        # Map current value to number
+        local mode_num=1
+        case $current_price_mode in
+            "vwap") mode_num=1 ;;
+            "nearest_bid") mode_num=2 ;;
+            "nearest_ask") mode_num=3 ;;
+            "auto") mode_num=4 ;;
+        esac
+        
+        echo -e "${YELLOW}Current: ${current_price_mode} (option ${mode_num})${NC}"
+        read -p "Select price mode (1-4) [${mode_num}]: " price_mode_choice
+        price_mode_choice=${price_mode_choice:-$mode_num}
+        
+        case $price_mode_choice in
+            1) out_of_range_price_mode="vwap" ;;
+            2) out_of_range_price_mode="nearest_bid" ;;
+            3) out_of_range_price_mode="nearest_ask" ;;
+            4) out_of_range_price_mode="auto" ;;
+            *) out_of_range_price_mode=$current_price_mode ;;
+        esac
     fi
-    
-    echo
-    echo "Out-of-range price mode (when all orders filtered):"
-    echo "  1. vwap (Volume Weighted Average Price - safest)"
-    echo "  2. nearest_bid (Conservative for buying)"
-    echo "  3. nearest_ask (Conservative for selling)"
-    echo "  4. auto (Adaptive - tries all sources)"
-    read -p "Select price mode (1-4, default 1): " price_mode_choice
-    price_mode_choice=${price_mode_choice:-1}
-    
-    case $price_mode_choice in
-        1) out_of_range_price_mode="vwap" ;;
-        2) out_of_range_price_mode="nearest_bid" ;;
-        3) out_of_range_price_mode="nearest_ask" ;;
-        4) out_of_range_price_mode="auto" ;;
-        *) out_of_range_price_mode="vwap" ;;
-    esac
     
     # Validate max_deviation
     if [[ "$max_deviation" != "0" ]] && (( $(echo "$max_deviation < 0" | bc -l) )); then
