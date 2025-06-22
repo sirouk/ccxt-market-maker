@@ -728,12 +728,6 @@ reconfigure_instance() {
     target_ratio=${target_ratio:-$current_target_ratio}
     
     echo
-    echo -e "${YELLOW}Acceptable deviation from target ratio before rebalancing${NC}"
-    echo -e "${YELLOW}Current value: ${current_inventory_tolerance}${NC}"
-    read -p "Inventory tolerance (0.01-0.5 typical) [${current_inventory_tolerance}]: " inventory_tolerance
-    inventory_tolerance=${inventory_tolerance:-$current_inventory_tolerance}
-    
-    echo
     echo -e "${YELLOW}How often to check market and update orders (in seconds)${NC}"
     echo -e "${YELLOW}Current value: ${current_polling_interval}${NC}"
     read -p "Polling interval (5-60 recommended) [${current_polling_interval}]: " polling_interval
@@ -785,20 +779,20 @@ reconfigure_instance() {
     
     echo
     echo -e "${YELLOW}Reference price source for outlier filtering${NC}"
-    echo "  1. vwap (Volume Weighted Average Price - most reliable)"
-    echo "  2. nearest_bid (Conservative for selling)"
-    echo "  3. nearest_ask (Conservative for buying)"
-    echo "  4. ticker_mid (Mid-point between bid/ask)"
-    echo "  5. last (Last traded price)"
+    echo "  1. ticker_mid (Mid-point between bid/ask - original default)"
+    echo "  2. last (Last traded price)"
+    echo "  3. vwap (Volume Weighted Average Price)"
+    echo "  4. nearest_bid (Conservative for selling)"
+    echo "  5. nearest_ask (Conservative for buying)"
     
     # Map current value to number
     local ref_num=1
     case $current_filter_ref in
-        "vwap") ref_num=1 ;;
-        "nearest_bid") ref_num=2 ;;
-        "nearest_ask") ref_num=3 ;;
-        "ticker_mid") ref_num=4 ;;
-        "last") ref_num=5 ;;
+        "ticker_mid") ref_num=1 ;;
+        "last") ref_num=2 ;;
+        "vwap") ref_num=3 ;;
+        "nearest_bid") ref_num=4 ;;
+        "nearest_ask") ref_num=5 ;;
     esac
     
     echo -e "${YELLOW}Current: ${current_filter_ref} (option ${ref_num})${NC}"
@@ -806,13 +800,19 @@ reconfigure_instance() {
     ref_choice=${ref_choice:-$ref_num}
     
     case $ref_choice in
-        1) outlier_filter_reference="vwap" ;;
-        2) outlier_filter_reference="nearest_bid" ;;
-        3) outlier_filter_reference="nearest_ask" ;;
-        4) outlier_filter_reference="ticker_mid" ;;
-        5) outlier_filter_reference="last" ;;
+        1) outlier_filter_reference="ticker_mid" ;;
+        2) outlier_filter_reference="last" ;;
+        3) outlier_filter_reference="vwap" ;;
+        4) outlier_filter_reference="nearest_bid" ;;
+        5) outlier_filter_reference="nearest_ask" ;;
         *) outlier_filter_reference=$current_filter_ref ;;
     esac
+    
+    echo
+    echo -e "${YELLOW}Acceptable deviation from target ratio before rebalancing${NC}"
+    echo -e "${YELLOW}Current value: ${current_inventory_tolerance}${NC}"
+    read -p "Inventory tolerance (0.01-0.5 typical) [${current_inventory_tolerance}]: " inventory_tolerance
+    inventory_tolerance=${inventory_tolerance:-$current_inventory_tolerance}
     
     echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
@@ -829,36 +829,42 @@ reconfigure_instance() {
     
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
-        # If fallback is disabled, use existing price mode or default
-        out_of_range_price_mode=${current_price_mode:-"vwap"}
+        # When fallback is disabled, don't set any price mode
+        out_of_range_price_mode="ticker_mid"  # Default but won't be used
     else
         out_of_range_pricing_fallback=true
         
         echo
         echo "Out-of-range price mode (when all orders filtered):"
-        echo "  1. vwap (Volume Weighted Average Price - safest)"
-        echo "  2. nearest_bid (Conservative for buying)"
-        echo "  3. nearest_ask (Conservative for selling)"
-        echo "  4. auto (Adaptive - tries all sources)"
+        echo "  1. ticker_mid (Mid-point between bid/ask - default)"
+        echo "  2. last (Last traded price)"
+        echo "  3. vwap (Volume Weighted Average Price)" 
+        echo "  4. nearest_bid (Conservative for buying)"
+        echo "  5. nearest_ask (Conservative for selling)"
+        echo "  6. auto (Adaptive - tries all sources)"
         
         # Map current value to number
         local mode_num=1
         case $current_price_mode in
-            "vwap") mode_num=1 ;;
-            "nearest_bid") mode_num=2 ;;
-            "nearest_ask") mode_num=3 ;;
-            "auto") mode_num=4 ;;
+            "ticker_mid") mode_num=1 ;;
+            "last") mode_num=2 ;;
+            "vwap") mode_num=3 ;;
+            "nearest_bid") mode_num=4 ;;
+            "nearest_ask") mode_num=5 ;;
+            "auto") mode_num=6 ;;
         esac
         
         echo -e "${YELLOW}Current: ${current_price_mode} (option ${mode_num})${NC}"
-        read -p "Select price mode (1-4) [${mode_num}]: " price_mode_choice
+        read -p "Select price mode (1-6) [${mode_num}]: " price_mode_choice
         price_mode_choice=${price_mode_choice:-$mode_num}
         
         case $price_mode_choice in
-            1) out_of_range_price_mode="vwap" ;;
-            2) out_of_range_price_mode="nearest_bid" ;;
-            3) out_of_range_price_mode="nearest_ask" ;;
-            4) out_of_range_price_mode="auto" ;;
+            1) out_of_range_price_mode="ticker_mid" ;;
+            2) out_of_range_price_mode="last" ;;
+            3) out_of_range_price_mode="vwap" ;;
+            4) out_of_range_price_mode="nearest_bid" ;;
+            5) out_of_range_price_mode="nearest_ask" ;;
+            6) out_of_range_price_mode="auto" ;;
             *) out_of_range_price_mode=$current_price_mode ;;
         esac
     fi
@@ -1074,11 +1080,6 @@ create_new_instance() {
     read -p "Target inventory ratio (0.01-0.99, default: 0.5): " target_ratio
     target_ratio=${target_ratio:-0.5}
     
-    echo
-    echo -e "${YELLOW}Acceptable deviation from target ratio before rebalancing${NC}"
-    read -p "Inventory tolerance (0.01-0.5 typical, default: 0.1): " inventory_tolerance
-    inventory_tolerance=${inventory_tolerance:-0.1}
-    
     # Add outlier filtering parameter
     echo
     echo -e "${YELLOW}=== Advanced Settings ===${NC}"
@@ -1090,23 +1091,28 @@ create_new_instance() {
     
     echo
     echo -e "${YELLOW}Reference price source for outlier filtering${NC}"
-    echo "  1. vwap (Volume Weighted Average Price - most reliable)"
-    echo "  2. nearest_bid (Conservative for selling)"
-    echo "  3. nearest_ask (Conservative for buying)"
-    echo "  4. ticker_mid (Mid-point between bid/ask)"
-    echo "  5. last (Last traded price)"
+    echo "  1. ticker_mid (Mid-point between bid/ask - original default)"
+    echo "  2. last (Last traded price)"
+    echo "  3. vwap (Volume Weighted Average Price)"
+    echo "  4. nearest_bid (Conservative for selling)"
+    echo "  5. nearest_ask (Conservative for buying)"
     
     read -p "Select reference price (1-5, default: 1): " ref_choice
     ref_choice=${ref_choice:-1}
     
     case $ref_choice in
-        1) outlier_filter_reference="vwap" ;;
-        2) outlier_filter_reference="nearest_bid" ;;
-        3) outlier_filter_reference="nearest_ask" ;;
-        4) outlier_filter_reference="ticker_mid" ;;
-        5) outlier_filter_reference="last" ;;
-        *) outlier_filter_reference="vwap" ;;
+        1) outlier_filter_reference="ticker_mid" ;;
+        2) outlier_filter_reference="last" ;;
+        3) outlier_filter_reference="vwap" ;;
+        4) outlier_filter_reference="nearest_bid" ;;
+        5) outlier_filter_reference="nearest_ask" ;;
+        *) outlier_filter_reference="ticker_mid" ;;
     esac
+    
+    echo
+    echo -e "${YELLOW}Acceptable deviation from target ratio before rebalancing${NC}"
+    read -p "Inventory tolerance (0.01-0.5 typical, default: 0.1): " inventory_tolerance
+    inventory_tolerance=${inventory_tolerance:-0.1}
     
     echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
@@ -1123,36 +1129,42 @@ create_new_instance() {
     
     if [[ "$enable_fallback" == "n" ]]; then
         out_of_range_pricing_fallback=false
-        # If fallback is disabled, use existing price mode or default
-        out_of_range_price_mode=${current_price_mode:-"vwap"}
+        # When fallback is disabled, don't set any price mode
+        out_of_range_price_mode="ticker_mid"  # Default but won't be used
     else
         out_of_range_pricing_fallback=true
         
         echo
         echo "Out-of-range price mode (when all orders filtered):"
-        echo "  1. vwap (Volume Weighted Average Price - safest)"
-        echo "  2. nearest_bid (Conservative for buying)"
-        echo "  3. nearest_ask (Conservative for selling)"
-        echo "  4. auto (Adaptive - tries all sources)"
+        echo "  1. ticker_mid (Mid-point between bid/ask - default)"
+        echo "  2. last (Last traded price)"
+        echo "  3. vwap (Volume Weighted Average Price)" 
+        echo "  4. nearest_bid (Conservative for buying)"
+        echo "  5. nearest_ask (Conservative for selling)"
+        echo "  6. auto (Adaptive - tries all sources)"
         
         # Map current value to number
         local mode_num=1
         case $current_price_mode in
-            "vwap") mode_num=1 ;;
-            "nearest_bid") mode_num=2 ;;
-            "nearest_ask") mode_num=3 ;;
-            "auto") mode_num=4 ;;
+            "ticker_mid") mode_num=1 ;;
+            "last") mode_num=2 ;;
+            "vwap") mode_num=3 ;;
+            "nearest_bid") mode_num=4 ;;
+            "nearest_ask") mode_num=5 ;;
+            "auto") mode_num=6 ;;
         esac
         
         echo -e "${YELLOW}Current: ${current_price_mode} (option ${mode_num})${NC}"
-        read -p "Select price mode (1-4) [${mode_num}]: " price_mode_choice
+        read -p "Select price mode (1-6) [${mode_num}]: " price_mode_choice
         price_mode_choice=${price_mode_choice:-$mode_num}
         
         case $price_mode_choice in
-            1) out_of_range_price_mode="vwap" ;;
-            2) out_of_range_price_mode="nearest_bid" ;;
-            3) out_of_range_price_mode="nearest_ask" ;;
-            4) out_of_range_price_mode="auto" ;;
+            1) out_of_range_price_mode="ticker_mid" ;;
+            2) out_of_range_price_mode="last" ;;
+            3) out_of_range_price_mode="vwap" ;;
+            4) out_of_range_price_mode="nearest_bid" ;;
+            5) out_of_range_price_mode="nearest_ask" ;;
+            6) out_of_range_price_mode="auto" ;;
             *) out_of_range_price_mode=$current_price_mode ;;
         esac
     fi

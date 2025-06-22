@@ -190,12 +190,12 @@ class BotCycleSimulator:
             print("❌ No ticker data available")
             return None
 
-        # Option 1: Filtered orderbook
+        # Option 1: Filtered orderbook (matches actual bot logic)
         if self.filtered_bids and self.filtered_asks:
             best_bid_item = self.filtered_bids.peekitem(-1)
             best_ask_item = self.filtered_asks.peekitem(0)
-            best_bid = best_bid_item[0]
-            best_ask = best_ask_item[0]
+            best_bid = Decimal(str(best_bid_item[0]))
+            best_ask = Decimal(str(best_ask_item[0]))
             mid_price = (best_bid + best_ask) / Decimal('2')
             spread = best_ask - best_bid
             spread_pct = (spread / mid_price) * 100

@@ -635,6 +635,11 @@ class MarketMakerREST:
                 bid_price = mid_price * (Decimal('1') - spread_pct)
                 ask_price = mid_price * (Decimal('1') + spread_pct)
 
+                # Protect against zero or negative prices
+                if bid_price <= 0:
+                    self.logger.warning(f"Calculated bid_price {bid_price} is <= 0, skipping grid level {i+1}")
+                    continue
+
                 # More conservative base sizing based on available balances
                 max_buy_size_by_balance = available_quote / (bid_price * Decimal('1.002'))  # Include fee buffer
                 max_sell_size_by_balance = available_base
@@ -929,8 +934,16 @@ class MarketMakerREST:
 
                 # Check if we should update the grid
                 current_mid_price = self.calculate_mid_price()
-                if current_mid_price and self.should_update_grid(current_mid_price):
+                
+                # IMPORTANT: Always update grid if we have no open orders
+                # This ensures we can recover from startup errors or when all orders are filled
+                has_open_orders = len(self.order_manager.my_orders) > 0
+                
+                if current_mid_price and (not has_open_orders or self.should_update_grid(current_mid_price)):
                     # Update grid anchor and generate new grid
+                    if not has_open_orders:
+                        self.logger.info("No open orders detected - forcing grid update")
+                    
                     self.grid_anchor_price = current_mid_price
                     self.last_grid_update_time = time.time()
                     self.grid_needs_update = False
