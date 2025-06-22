@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 from ccxt.base.errors import BaseError
 from decimal import Decimal
 import logging
@@ -35,6 +35,34 @@ class OrderManager:
         # Track orders that have disappeared from open orders but may still be settling
         self.recently_closed_orders: Dict[str, OrderDataWithDisappeared] = {}
 
+    def _safe_str_to_float(self, value: Any, default: float = 0.0) -> float:
+        """Safely convert a value to float, handling 'None' strings and other edge cases."""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            # Handle string 'None' or empty strings
+            if value.lower() == 'none' or value == '':
+                return default
+            try:
+                return float(value)
+            except ValueError:
+                self.logger.warning(f"Could not convert '{value}' to float, using default {default}")
+                return default
+        return default
+
+    def _safe_value_to_str(self, value: Any, default: str = '0') -> str:
+        """Safely convert a value to string, handling None and 'None' strings."""
+        if value is None:
+            return default
+        if isinstance(value, str):
+            # If it's already string 'None', convert to default
+            if value.lower() == 'none':
+                return default
+            return value
+        return str(value)
+
     async def fetch_open_orders(self) -> None:
         """Fetch and update open orders from exchange."""
         try:
@@ -53,11 +81,10 @@ class OrderManager:
                 oid = str(order['id'])
                 current_ids.add(oid)
 
-                # Convert numeric fields to string for consistency
-                price_value = order.get('price')
-                price = str(price_value) if price_value is not None else '0'
-                amount = str(order.get('amount', 0))
-                filled = str(order.get('filled', 0))
+                # Convert numeric fields to string for consistency, handling 'None' strings
+                price = self._safe_value_to_str(order.get('price'), '0')
+                amount = self._safe_value_to_str(order.get('amount', 0), '0')
+                filled = self._safe_value_to_str(order.get('filled', 0), '0')
 
                 # Check if we already have this order in our tracking
                 existing_order = self.my_orders.get(oid)
@@ -162,12 +189,12 @@ class OrderManager:
                     order_id,
                     self.symbol
                 )
-                final_filled = float(final_order.get('filled', 0))
+                final_filled = self._safe_str_to_float(final_order.get('filled', 0))
                 self.logger.info(f"Final check for order {order_id}: filled={final_filled}")
             except Exception as e:
                 self.logger.warning(f"Could not fetch final order details for {order_id}: {e}")
                 # Fall back to the last known filled amount
-                final_filled = float(order_data.get('filled', 0))
+                final_filled = self._safe_str_to_float(order_data.get('filled', 0))
 
             # Update database status
             self.db.update_order_status(order_id, 'CLOSED')
@@ -179,7 +206,7 @@ class OrderManager:
                     orderId=order_id,
                     pair=order_data['symbol'],
                     side=order_data['side'],
-                    price=float(order_data['price']),
+                    price=self._safe_str_to_float(order_data['price']),
                     quantity=final_filled
                 )
                 self.logger.info(f"Recording trade for finalized order {order_id}: {trade_data}")
