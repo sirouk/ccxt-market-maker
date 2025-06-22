@@ -56,6 +56,11 @@ class MarketMakerREST:
             retry_handler=self.retry_handler
         )
 
+        # Grid stability tracking (new)
+        self.grid_anchor_price = None
+        self.last_grid_update_time = None
+        self.grid_needs_update = True
+
     def setup_signal_handlers(self) -> None:
         """Handle Ctrl+C or kill signals for graceful shutdown"""
         def signal_handler(signum: int, frame: Any) -> None:
@@ -512,6 +517,47 @@ class MarketMakerREST:
             self.logger.error(f"Error calculating inventory ratio: {e}")
             return self.config.target_inventory_ratio
 
+    def should_update_grid(self, current_mid_price: Decimal) -> bool:
+        """
+        Determine if the grid should be updated based on price movement and cooldown.
+        
+        The update threshold is automatically calculated as half of the grid spread,
+        meaning the grid updates when price moves halfway to the next grid level.
+        
+        Returns:
+            True if grid should be updated, False otherwise
+        """
+        import time
+        
+        # Always update if this is the first grid or forced update
+        if self.grid_needs_update or self.grid_anchor_price is None:
+            self.logger.info("Grid update required: Initial grid or forced update")
+            return True
+            
+        # Calculate dynamic threshold based on grid spread
+        # Update when price moves by half the grid spread (halfway to next level)
+        dynamic_threshold = self.config.grid_spread * Decimal('0.5')
+        
+        # Check cooldown period (use 3x polling interval as dynamic cooldown)
+        dynamic_cooldown = self.config.polling_interval * 3
+        if self.last_grid_update_time is not None:
+            time_since_update = time.time() - self.last_grid_update_time
+            if time_since_update < dynamic_cooldown:
+                self.logger.debug(f"Grid update cooldown active: {time_since_update:.1f}s / {dynamic_cooldown:.1f}s")
+                return False
+        
+        # Check price movement threshold
+        price_change = abs(current_mid_price - self.grid_anchor_price) / self.grid_anchor_price
+        
+        if price_change >= dynamic_threshold:
+            self.logger.info(f"Grid update triggered: Price moved {price_change:.2%} "
+                           f"(threshold: {dynamic_threshold:.2%} = grid_spread/2)")
+            self.logger.info(f"Anchor price: {self.grid_anchor_price} → Current: {current_mid_price}")
+            return True
+        else:
+            self.logger.debug(f"Grid stable: Price change {price_change:.2%} < threshold {dynamic_threshold:.2%}")
+            return False
+
     def adjust_order_sizes_for_inventory(self, side: str, base_size: Decimal, inventory_ratio: Decimal) -> Decimal:
         """Adjust order sizes based on current inventory ratio vs target."""
         ratio_diff = inventory_ratio - self.config.target_inventory_ratio
@@ -854,18 +900,29 @@ class MarketMakerREST:
                 recently_closed_count = len(self.order_manager.recently_closed_orders)
                 self.logger.debug(f"Order status: {open_orders_count} open orders, {recently_closed_count} recently closed orders")
 
-                grid_orders = await self.calculate_order_grid()
-                self.logger.debug(f"Generated {len(grid_orders)} potential grid orders")
+                # Check if we should update the grid
+                current_mid_price = self.calculate_mid_price()
+                if current_mid_price and self.should_update_grid(current_mid_price):
+                    # Update grid anchor and generate new grid
+                    self.grid_anchor_price = current_mid_price
+                    self.last_grid_update_time = time.time()
+                    self.grid_needs_update = False
+                    
+                    grid_orders = await self.calculate_order_grid()
+                    self.logger.debug(f"Generated {len(grid_orders)} potential grid orders")
 
-                # Cancel orders that are outside the current grid
-                await self.cancel_orders_outside_grid(grid_orders)
+                    # Cancel orders that are outside the current grid
+                    await self.cancel_orders_outside_grid(grid_orders)
 
-                placed_orders = 0
-                for side, price, size in grid_orders:
-                    await self.maybe_place_order(side, price, size)
-                    placed_orders += 1
+                    placed_orders = 0
+                    for side, price, size in grid_orders:
+                        await self.maybe_place_order(side, price, size)
+                        placed_orders += 1
+                else:
+                    # Grid is stable, just check for fills and maintain existing orders
+                    self.logger.debug("Grid stable - maintaining existing orders")
 
-                self.logger.debug(f"Loop #{loop_count} completed: processed {len(grid_orders)} grid orders")
+                self.logger.debug(f"Loop #{loop_count} completed")
                 consecutive_errors = 0
                 await asyncio.sleep(self.config.polling_interval)
 

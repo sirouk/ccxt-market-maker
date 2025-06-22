@@ -17,6 +17,7 @@ import os
 from datetime import datetime
 from decimal import Decimal
 import yaml
+import time
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,8 +52,12 @@ class BotCycleSimulator:
         self.balance = None
         self.filtered_bids = SortedDict()
         self.filtered_asks = SortedDict()
+        
+        # Grid stability tracking
+        self.grid_anchor_price = None
+        self.last_grid_update_time = None
 
-    def run_cycle(self):
+    def run_cycle(self, simulate_price_movement=False):
         """Run one complete bot cycle"""
         print(f"=== MARKET MAKER BOT SIMULATION ===")
         print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -61,6 +66,9 @@ class BotCycleSimulator:
 
         # Step 1: Fetch market data
         self._fetch_market_data()
+        if not self.ticker or not self.orderbook or not self.balance:
+            print("\n❌ CYCLE ABORTED: Failed to fetch market data")
+            return
 
         # Step 2: Apply outlier filtering
         self._filter_orderbook()
@@ -71,45 +79,67 @@ class BotCycleSimulator:
             print("\n❌ CYCLE ABORTED: Could not determine mid-price")
             return
 
-        # Step 4: Calculate inventory
-        inventory_ratio, needs_rebalancing = self._calculate_inventory(mid_price)
+        # Step 3.5: Check grid stability
+        should_update = self._check_grid_stability(mid_price)
+        
+        if should_update:
+            # Step 4: Calculate inventory
+            inventory_ratio, needs_rebalancing = self._calculate_inventory(mid_price)
 
-        # Step 5: Generate order grid
-        buy_orders, sell_orders = self._generate_order_grid(mid_price, inventory_ratio)
+            # Step 5: Generate order grid
+            buy_orders, sell_orders = self._generate_order_grid(mid_price, inventory_ratio)
 
-        # Step 6: Show what would be executed
-        self._show_execution_plan(buy_orders, sell_orders)
+            # Step 6: Show what would be executed
+            self._show_execution_plan(buy_orders, sell_orders)
+            
+            # Update grid anchor
+            self.grid_anchor_price = mid_price
+            self.last_grid_update_time = time.time()
+        else:
+            print("\n=== GRID STABLE - NO UPDATES NEEDED ===")
+            print("Orders would remain in their current positions")
+            
+        # Optional: Simulate price movement
+        if simulate_price_movement:
+            self._simulate_price_scenarios()
 
     def _fetch_market_data(self):
         """Step 1: Fetch all market data"""
         print("=== STEP 1: FETCHING MARKET DATA ===\n")
 
-        # Fetch ticker
-        self.ticker = self.exchange.fetch_ticker(self.bot_config['symbol'])
-        print("Ticker Data:")
-        print(f"  VWAP: {self.ticker.get('vwap', 'N/A')}")
-        print(f"  Last: {self.ticker.get('last', 'N/A')}")
-        print(f"  Bid: {self.ticker.get('bid', 'N/A')}")
-        print(f"  Ask: {self.ticker.get('ask', 'N/A')}")
-        print(f"  24h Volume: {self.ticker.get('baseVolume', 'N/A'):,.0f} LBR")
+        try:
+            # Fetch ticker
+            self.ticker = self.exchange.fetch_ticker(self.bot_config['symbol'])
+            print("Ticker Data:")
+            print(f"  VWAP: {self.ticker.get('vwap', 'N/A')}")
+            print(f"  Last: {self.ticker.get('last', 'N/A')}")
+            print(f"  Bid: {self.ticker.get('bid', 'N/A')}")
+            print(f"  Ask: {self.ticker.get('ask', 'N/A')}")
+            print(f"  24h Volume: {self.ticker.get('baseVolume', 'N/A'):,.0f} LBR")
 
-        # Fetch orderbook
-        self.orderbook = self.exchange.fetch_order_book(self.bot_config['symbol'], limit=20)
-        print(f"\nOrderbook Depth:")
-        print(f"  Bids: {len(self.orderbook['bids'])} levels")
-        print(f"  Asks: {len(self.orderbook['asks'])} levels")
+            # Fetch orderbook
+            self.orderbook = self.exchange.fetch_order_book(self.bot_config['symbol'], limit=20)
+            print(f"\nOrderbook Depth:")
+            print(f"  Bids: {len(self.orderbook['bids'])} levels")
+            print(f"  Asks: {len(self.orderbook['asks'])} levels")
 
-        # Fetch balance
-        self.balance = self.exchange.fetch_balance()
-        lbr_free = self.balance.get('LBR', {}).get('free', 0)
-        usdt_free = self.balance.get('USDT', {}).get('free', 0)
-        print(f"\nAccount Balances:")
-        print(f"  LBR: {lbr_free:,.0f}")
-        print(f"  USDT: {usdt_free:,.2f}")
+            # Fetch balance
+            self.balance = self.exchange.fetch_balance()
+            lbr_free = self.balance.get('LBR', {}).get('free', 0)
+            usdt_free = self.balance.get('USDT', {}).get('free', 0)
+            print(f"\nAccount Balances:")
+            print(f"  LBR: {lbr_free:,.0f}")
+            print(f"  USDT: {usdt_free:,.2f}")
+        except Exception as e:
+            print(f"Error fetching market data: {e}")
 
     def _filter_orderbook(self):
         """Step 2: Filter orderbook for outliers"""
         print("\n=== STEP 2: OUTLIER FILTERING ===\n")
+        
+        if not self.ticker or not self.orderbook:
+            print("❌ No market data available for filtering")
+            return
 
         # Get reference price (VWAP preferred)
         vwap = Decimal(str(self.ticker.get('vwap', 0)))
@@ -128,8 +158,8 @@ class BotCycleSimulator:
 
         # Filter bids
         print(f"\nFiltering Bids:")
-        original_bid_count = len(self.orderbook['bids'])
-        for bid in self.orderbook['bids']:
+        original_bid_count = len(self.orderbook.get('bids', []))
+        for bid in self.orderbook.get('bids', []):
             price = Decimal(str(bid[0]))
             if min_allowed <= price <= max_allowed:
                 self.filtered_bids[price] = Decimal(str(bid[1]))
@@ -141,8 +171,8 @@ class BotCycleSimulator:
 
         # Filter asks
         print(f"\nFiltering Asks:")
-        original_ask_count = len(self.orderbook['asks'])
-        for ask in self.orderbook['asks']:
+        original_ask_count = len(self.orderbook.get('asks', []))
+        for ask in self.orderbook.get('asks', []):
             price = Decimal(str(ask[0]))
             if min_allowed <= price <= max_allowed:
                 self.filtered_asks[price] = Decimal(str(ask[1]))
@@ -155,11 +185,17 @@ class BotCycleSimulator:
     def _calculate_mid_price(self):
         """Step 3: Calculate mid-price using price hierarchy"""
         print("\n=== STEP 3: CALCULATING MID-PRICE ===\n")
+        
+        if not self.ticker:
+            print("❌ No ticker data available")
+            return None
 
         # Option 1: Filtered orderbook
         if self.filtered_bids and self.filtered_asks:
-            best_bid = self.filtered_bids.peekitem(-1)[0]
-            best_ask = self.filtered_asks.peekitem(0)[0]
+            best_bid_item = self.filtered_bids.peekitem(-1)
+            best_ask_item = self.filtered_asks.peekitem(0)
+            best_bid = best_bid_item[0]
+            best_ask = best_ask_item[0]
             mid_price = (best_bid + best_ask) / Decimal('2')
             spread = best_ask - best_bid
             spread_pct = (spread / mid_price) * 100
@@ -179,7 +215,7 @@ class BotCycleSimulator:
         # Get VWAP as reference
         vwap = Decimal(str(self.ticker.get('vwap', 0)))
 
-        if price_mode == 'nearest_bid' and self.orderbook.get('bids'):
+        if price_mode == 'nearest_bid' and self.orderbook and self.orderbook.get('bids'):
             # Find nearest bid
             best_bid = Decimal(str(self.orderbook['bids'][0][0]))
             print(f"✅ Using nearest bid: {best_bid:.8f}")
@@ -187,7 +223,7 @@ class BotCycleSimulator:
                 print(f"   ({(best_bid/vwap - 1)*100:+.1f}% from VWAP)")
             return best_bid
 
-        elif price_mode == 'nearest_ask' and self.orderbook.get('asks'):
+        elif price_mode == 'nearest_ask' and self.orderbook and self.orderbook.get('asks'):
             # Find nearest ask
             best_ask = Decimal(str(self.orderbook['asks'][0][0]))
             print(f"✅ Using nearest ask: {best_ask:.8f}")
@@ -249,9 +285,58 @@ class BotCycleSimulator:
         print("❌ No valid price source available!")
         return None
 
+    def _check_grid_stability(self, current_mid_price):
+        """Step 3.5: Check if grid needs updating based on price movement"""
+        print("\n=== STEP 3.5: GRID STABILITY CHECK ===\n")
+        
+        # Calculate dynamic threshold based on grid spread
+        grid_spread = Decimal(str(self.bot_config['grid_spread']))
+        dynamic_threshold = grid_spread * Decimal('0.5')
+        
+        # Calculate dynamic cooldown (3x polling interval)
+        polling_interval = float(self.bot_config.get('polling_interval', 5))
+        dynamic_cooldown = polling_interval * 3
+        
+        print(f"Grid Stability Parameters:")
+        print(f"  Update Threshold: {float(dynamic_threshold)*100:.2f}% (grid_spread/2)")
+        print(f"  Cooldown Period: {dynamic_cooldown:.1f}s (3 × polling_interval)")
+        
+        # First grid or no anchor
+        if self.grid_anchor_price is None:
+            print("\n✅ Grid update required: Initial grid creation")
+            return True
+            
+        # Check cooldown
+        if self.last_grid_update_time is not None:
+            time_since_update = time.time() - self.last_grid_update_time
+            if time_since_update < dynamic_cooldown:
+                print(f"\n⏳ Grid update cooldown active: {time_since_update:.1f}s / {dynamic_cooldown:.1f}s")
+                print(f"   Must wait {dynamic_cooldown - time_since_update:.1f}s more")
+                return False
+        
+        # Check price movement
+        price_change = abs(current_mid_price - self.grid_anchor_price) / self.grid_anchor_price
+        
+        print(f"\nPrice Movement Analysis:")
+        print(f"  Anchor Price: {self.grid_anchor_price:.8f}")
+        print(f"  Current Price: {current_mid_price:.8f}")
+        print(f"  Change: {float(price_change)*100:.2f}%")
+        print(f"  Threshold: {float(dynamic_threshold)*100:.2f}%")
+        
+        if price_change >= dynamic_threshold:
+            print(f"\n✅ Grid update triggered: Price moved {float(price_change)*100:.2f}%")
+            return True
+        else:
+            print(f"\n❌ Grid stable: Price change below threshold")
+            return False
+
     def _calculate_inventory(self, mid_price):
         """Step 4: Calculate inventory ratio and rebalancing needs"""
         print("\n=== STEP 4: INVENTORY ANALYSIS ===\n")
+        
+        if not self.balance:
+            print("❌ No balance data available")
+            return Decimal('0.5'), 'balanced'
 
         lbr_balance = Decimal(str(self.balance.get('LBR', {}).get('free', 0)))
         usdt_balance = Decimal(str(self.balance.get('USDT', {}).get('free', 0)))
@@ -348,6 +433,10 @@ class BotCycleSimulator:
     def _show_execution_plan(self, buy_orders, sell_orders):
         """Step 6: Show what orders would be placed"""
         print("\n=== STEP 6: EXECUTION PLAN ===\n")
+        
+        if not self.balance:
+            print("❌ No balance data available")
+            return
 
         lbr_balance = Decimal(str(self.balance.get('LBR', {}).get('free', 0)))
         usdt_balance = Decimal(str(self.balance.get('USDT', {}).get('free', 0)))
@@ -393,13 +482,48 @@ class BotCycleSimulator:
 
         if placeable_buys == 0 and placeable_sells == 0:
             print("\n⚠️  WARNING: No orders would be placed! Check your balances.")
+            
+    def _simulate_price_scenarios(self):
+        """Simulate different price scenarios to show grid stability behavior"""
+        print("\n\n=== GRID STABILITY SCENARIOS ===\n")
+        
+        if not self.grid_anchor_price:
+            print("❌ No anchor price set")
+            return
+            
+        grid_spread = Decimal(str(self.bot_config['grid_spread']))
+        threshold = grid_spread * Decimal('0.5')
+        
+        scenarios = [
+            ("Small movement (0.2%)", Decimal('0.002')),
+            ("Near threshold (0.4%)", Decimal('0.004')),
+            ("Above threshold (0.6%)", Decimal('0.006')),
+            ("Large movement (1.5%)", Decimal('0.015'))
+        ]
+        
+        print(f"Current anchor price: {self.grid_anchor_price:.8f}")
+        print(f"Update threshold: {float(threshold)*100:.2f}%\n")
+        
+        for name, change in scenarios:
+            new_price = self.grid_anchor_price * (Decimal('1') + change)
+            would_update = change >= threshold
+            print(f"{name}:")
+            print(f"  New price: {new_price:.8f}")
+            print(f"  Grid update: {'✅ YES' if would_update else '❌ NO'}")
+            print()
 
 def main():
     """Main entry point"""
     config_path = sys.argv[1] if len(sys.argv) > 1 else 'configs/LBR-1-config.yaml'
 
     simulator = BotCycleSimulator(config_path)
+    
+    # Run main cycle
     simulator.run_cycle()
+    
+    # Optional: Show price scenarios
+    if len(sys.argv) > 2 and sys.argv[2] == '--scenarios':
+        simulator._simulate_price_scenarios()
 
 if __name__ == "__main__":
     main()

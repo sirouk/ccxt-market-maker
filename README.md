@@ -157,6 +157,7 @@ Key parameters in `config.yaml`:
 2. **Inventory Management**: Automatically adjusts order sizes to maintain target ratio
 3. **Continuous Rebalancing**: As orders fill, new ones are placed to maintain liquidity
 4. **Outlier Protection**: Filters out extreme orders that could distort pricing
+5. **Smart Grid Stability**: Intelligently maintains order positions during small price movements
 
 Example with default settings:
 - Places 3 buy orders below market price
@@ -164,8 +165,42 @@ Example with default settings:
 - Each level is 0.05% apart
 - Adjusts sizes to maintain 50/50 inventory balance
 - Ignores orders more than 10% from last traded price
+- Grid updates only when price moves significantly (see Grid Stability below)
 
 ## Advanced Features
+
+### 🆕 Automatic Grid Stability
+
+The bot now includes **automatic grid stability** that intelligently reduces unnecessary order cancellations based on your existing grid configuration. No new settings required!
+
+**How it works:**
+- **Dynamic Threshold** = `grid_spread ÷ 2`
+  - The grid only updates when price moves **halfway to the next grid level**
+  - For example: If your `grid_spread` is 0.01 (1%), the grid updates when price moves 0.5%
+
+- **Dynamic Cooldown** = `polling_interval × 3`
+  - Prevents rapid updates during volatile periods
+  - For example: If `polling_interval` is 5 seconds, there's a 15-second cooldown between updates
+
+**Benefits:**
+- ✅ **Zero configuration** - works automatically with your existing settings
+- ✅ **Reduced API calls** - fewer order cancellations and placements
+- ✅ **Better fill rates** - orders stay in place longer
+- ✅ **Natural scaling** - wider grids are naturally more stable
+
+**Examples:**
+- **Tight grid** (`grid_spread: 0.002`): Updates at 0.1% price movement
+- **Normal grid** (`grid_spread: 0.01`): Updates at 0.5% price movement  
+- **Wide grid** (`grid_spread: 0.02`): Updates at 1% price movement
+
+**Log Messages:**
+```
+Grid stable: Price change 0.23% < threshold 0.50%
+Grid update triggered: Price moved 0.67% (threshold: 0.50% = grid_spread/2)
+Grid update cooldown active: 8.2s / 15.0s
+```
+
+This creates a natural balance where your grid configuration automatically determines the appropriate stability behavior!
 
 ### Outlier Filtering
 
@@ -280,21 +315,31 @@ python tests/simulate_bot_cycle.py
 
 # Simulate with specific config
 python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml
+
+# Show grid stability scenarios
+python tests/simulate_bot_cycle.py configs/YOUR-CONFIG.yaml --scenarios
 ```
 
 The simulation shows:
 1. **Market Data Fetching**: Current ticker, orderbook, and balances
 2. **Outlier Filtering**: Which orders are filtered and why
 3. **Price Calculation**: How the mid-price is determined
-4. **Inventory Analysis**: Current vs target ratios
-5. **Order Grid Generation**: All orders that would be created
-6. **Execution Plan**: Which orders can actually be placed with current balances
+4. **🆕 Grid Stability Check**: Whether the grid would update based on price movement
+5. **Inventory Analysis**: Current vs target ratios
+6. **Order Grid Generation**: All orders that would be created
+7. **Execution Plan**: Which orders can actually be placed with current balances
+
+The `--scenarios` flag shows how the grid would react to different price movements:
+- Small movements that don't trigger updates
+- Movements near the threshold
+- Large movements that would update the grid
 
 This is useful for:
 - Testing configurations before running the bot
 - Understanding the bot's decision-making process
 - Debugging issues with order placement
 - Verifying outlier filtering is working correctly
+- **🆕 Seeing grid stability behavior in action**
 
 ### Low Liquidity Markets
 

@@ -26,7 +26,7 @@ class Config:
         max_orderbook_deviation: Decimal = Decimal('0.1'),  # Default 10% max deviation
         outlier_filter_reference: str = 'vwap',  # Reference price for outlier filtering
         out_of_range_pricing_fallback: bool = True,  # Enable fallback pricing when out of range
-        out_of_range_price_mode: str = 'vwap',  # Price mode when all orders filtered out
+        out_of_range_price_mode: str = 'vwap'  # Price mode when all orders filtered out
     ):
         self.api_key = api_key
         self.api_secret = api_secret
