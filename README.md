@@ -65,6 +65,12 @@ That's it! The bot handles all the complexity automatically.
 - Tracks order settlement properly
 - Restarts from where it left off
 
+#### 💰 **Balance Change Detection** 
+- Automatically detects deposits/withdrawals
+- Updates orders when you add funds (1% change)
+- No need to restart - bot adapts instantly
+- Works even when prices are stable
+
 ## 💰 Before You Start
 
 ### Funding Requirements

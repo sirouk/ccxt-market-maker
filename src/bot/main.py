@@ -961,6 +961,47 @@ class MarketMakerREST:
                 else:
                     # Grid is stable, just check for fills and maintain existing orders
                     self.logger.debug("Grid stable - maintaining existing orders")
+                    
+                    # Check for significant balance changes that might warrant grid update
+                    try:
+                        current_base_balance = await self.get_available_balance(self.base_currency)
+                        current_quote_balance = await self.get_available_balance(self.quote_currency)
+                        
+                        # Compare with last known balances (initialize if not set)
+                        if not hasattr(self, '_last_known_base_balance'):
+                            self._last_known_base_balance = current_base_balance
+                            self._last_known_quote_balance = current_quote_balance
+                        
+                        # Calculate balance changes
+                        base_change = abs(current_base_balance - self._last_known_base_balance)
+                        quote_change = abs(current_quote_balance - self._last_known_quote_balance)
+                        
+                        # Significant change threshold (1% of balance or 1x min order size worth)
+                        base_threshold = max(
+                            self._last_known_base_balance * Decimal('0.01'),
+                            self.config.min_order_size
+                        )
+                        quote_threshold = max(
+                            self._last_known_quote_balance * Decimal('0.01'),
+                            self.config.min_order_size * current_mid_price if current_mid_price else Decimal('10')
+                        )
+                        
+                        if base_change > base_threshold or quote_change > quote_threshold:
+                            self.logger.info(f"Significant balance change detected!")
+                            self.logger.info(f"Base: {self._last_known_base_balance} → {current_base_balance} (change: {base_change})")
+                            self.logger.info(f"Quote: {self._last_known_quote_balance} → {current_quote_balance} (change: {quote_change})")
+                            self.logger.info("Forcing grid update to utilize new balances")
+                            
+                            # Force grid update
+                            self.grid_needs_update = True
+                            # Will trigger update in next loop iteration
+                        
+                        # Update last known balances
+                        self._last_known_base_balance = current_base_balance
+                        self._last_known_quote_balance = current_quote_balance
+                        
+                    except Exception as e:
+                        self.logger.debug(f"Error checking balance changes: {e}")
 
                 self.logger.debug(f"Loop #{loop_count} completed")
                 consecutive_errors = 0
