@@ -61,7 +61,8 @@ That's it! The bot handles all the complexity automatically.
 - Continues working even if all orders are outliers
 
 #### 🔄 **Smart Recovery**
-- Gracefully cancels orders when stopping
+- Gracefully cancels ALL orders when stopping
+- Fetches fresh order data on shutdown (no orphaned orders)
 - Tracks order settlement properly
 - Restarts from where it left off
 

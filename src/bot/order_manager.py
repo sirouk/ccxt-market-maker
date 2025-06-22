@@ -236,49 +236,78 @@ class OrderManager:
             self.logger.error(f"Error cancelling order {order_id}: {e}")
 
     async def cancel_all_orders(self) -> None:
-        """Cancel all locally tracked open orders and wait for confirmation."""
-        all_order_ids = list(self.my_orders.keys()) + list(self.recently_closed_orders.keys())
-
-        if not all_order_ids:
-            self.logger.info("No orders to cancel")
-            return
-
-        self.logger.info(f"Cancelling {len(all_order_ids)} orders...")
-        self.logger.debug(f"Orders to cancel: active={len(self.my_orders)}, recently_closed={len(self.recently_closed_orders)}")
-
-        for oid in all_order_ids:
-            await self.cancel_order(oid)
-
-        # Wait a bit for cancellations to process
-        await asyncio.sleep(2)
-
-        # Verify all orders are cancelled
-        await self._verify_cancellations(all_order_ids)
-
-        # Clear local tracking
-        self.my_orders.clear()
-        self.recently_closed_orders.clear()
-        self.logger.debug("All order tracking cleared")
-
-    async def _verify_cancellations(self, cancelled_order_ids: List[str]) -> None:
-        """Verify that all orders have been cancelled."""
-        max_retries = 5
-        for retry in range(max_retries):
-            try:
-                remaining_orders = await self.retry_handler.retry_with_backoff(
-                    self.exchange.fetch_open_orders,
-                    "Verify orders cancelled",
-                    self.symbol
-                )
-                our_remaining = [o for o in remaining_orders if str(o['id']) in cancelled_order_ids]
-
-                if not our_remaining:
-                    self.logger.info("All orders successfully cancelled")
-                    break
-                else:
-                    self.logger.warning(f"Still have {len(our_remaining)} open orders, retry {retry + 1}/{max_retries}")
-                    if retry < max_retries - 1:
-                        await asyncio.sleep(2)
-
-            except Exception as e:
-                self.logger.error(f"Error checking remaining orders: {e}")
+        """Cancel all open orders for this symbol, fetching fresh data from exchange."""
+        self.logger.info("Fetching all open orders to cancel...")
+        
+        try:
+            # Fetch fresh order data from exchange to ensure we don't miss any
+            open_orders = await self.retry_handler.retry_with_backoff(
+                self.exchange.fetch_open_orders,
+                "Fetch all orders for cancellation",
+                self.symbol
+            )
+            
+            if not open_orders:
+                self.logger.info("No open orders found to cancel")
+                return
+            
+            self.logger.info(f"Found {len(open_orders)} open orders to cancel")
+            
+            # Cancel each order
+            cancelled_count = 0
+            failed_count = 0
+            
+            for order in open_orders:
+                order_id = str(order['id'])
+                try:
+                    await self.retry_handler.retry_with_backoff(
+                        self.exchange.cancel_order,
+                        f"Cancel order {order_id}",
+                        order_id,
+                        self.symbol
+                    )
+                    cancelled_count += 1
+                    self.logger.debug(f"Cancelled order {order_id}")
+                    
+                    # Update database
+                    self.db.update_order_status(order_id, 'CANCELLED')
+                    
+                except Exception as e:
+                    failed_count += 1
+                    self.logger.error(f"Failed to cancel order {order_id}: {e}")
+            
+            self.logger.info(f"Cancellation complete: {cancelled_count} cancelled, {failed_count} failed")
+            
+            # Wait for cancellations to process
+            await asyncio.sleep(2)
+            
+            # Verify all orders are cancelled
+            remaining_orders = await self.retry_handler.retry_with_backoff(
+                self.exchange.fetch_open_orders,
+                "Verify all orders cancelled",
+                self.symbol
+            )
+            
+            if remaining_orders:
+                self.logger.warning(f"WARNING: {len(remaining_orders)} orders still open after cancellation!")
+                # Try one more time for stubborn orders
+                for order in remaining_orders:
+                    order_id = str(order['id'])
+                    try:
+                        self.logger.info(f"Retry cancelling stubborn order {order_id}")
+                        await self.exchange.cancel_order(order_id, self.symbol)
+                    except Exception as e:
+                        self.logger.error(f"Failed to cancel stubborn order {order_id}: {e}")
+            else:
+                self.logger.info("All orders successfully cancelled")
+            
+            # Clear local tracking
+            self.my_orders.clear()
+            self.recently_closed_orders.clear()
+            self.logger.debug("Order tracking cleared")
+            
+        except Exception as e:
+            self.logger.error(f"Critical error during order cancellation: {e}")
+            # Still try to clear local tracking
+            self.my_orders.clear()
+            self.recently_closed_orders.clear()
