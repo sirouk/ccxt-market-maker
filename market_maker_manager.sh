@@ -198,6 +198,22 @@ display_instance_details() {
         else
             echo -e "${BLUE}Outlier Filter:${NC} Disabled"
         fi
+        
+        # Show grid management settings
+        local strict_grid_count=$(grep "strict_grid_count:" "$config_file" | awk '{print $2}')
+        local cancel_all_on_grid_update=$(grep "cancel_all_on_grid_update:" "$config_file" | awk '{print $2}')
+        
+        if [ "$strict_grid_count" = "true" ]; then
+            echo -e "${BLUE}Grid Management:${NC} Strict (maintains exact order count)"
+        else
+            echo -e "${BLUE}Grid Management:${NC} Flexible (allows accumulation)"
+        fi
+        
+        if [ "$cancel_all_on_grid_update" = "true" ]; then
+            echo -e "${BLUE}Grid Update:${NC} Clean slate (cancels all orders)"
+        else
+            echo -e "${BLUE}Grid Update:${NC} Smart (only cancels out-of-range/excess)"
+        fi
     fi
 }
 
@@ -689,6 +705,12 @@ reconfigure_instance() {
     local current_pricing_fallback=$(grep "out_of_range_pricing_fallback:" "$config_file" | awk '{print $2}')
     local current_price_mode=$(grep "out_of_range_price_mode:" "$config_file" | awk '{print $2}')
     local current_polling_interval=$(grep "polling_interval:" "$config_file" | awk '{print $2}')
+    local current_strict_grid_count=$(grep "strict_grid_count:" "$config_file" | awk '{print $2}')
+    local current_cancel_all_on_grid_update=$(grep "cancel_all_on_grid_update:" "$config_file" | awk '{print $2}')
+    
+    # Set defaults if not found
+    current_strict_grid_count=${current_strict_grid_count:-true}
+    current_cancel_all_on_grid_update=${current_cancel_all_on_grid_update:-false}
     
     # Extract quote currency from symbol
     local quote=$(echo "$current_symbol" | cut -d'/' -f2)
@@ -869,6 +891,48 @@ reconfigure_instance() {
         esac
     fi
     
+    echo
+    echo -e "${YELLOW}How should the bot manage order count?${NC}"
+    echo "1) Strict count - Always maintain exactly grid_levels orders (recommended)"
+    echo "2) Allow accumulation - Orders can build up over time"
+    
+    # Map current value to choice
+    local grid_mode_num=1
+    if [[ "$current_strict_grid_count" == "false" ]]; then
+        grid_mode_num=2
+    fi
+    
+    echo -e "${YELLOW}Current: option ${grid_mode_num}${NC}"
+    read -p "Choose order management mode (1-2) [${grid_mode_num}]: " grid_mode_choice
+    grid_mode_choice=${grid_mode_choice:-$grid_mode_num}
+    
+    if [ "$grid_mode_choice" = "2" ]; then
+        strict_grid_count=false
+    else
+        strict_grid_count=true
+    fi
+    
+    echo
+    echo -e "${YELLOW}When grid updates, should all orders be cancelled?${NC}"
+    echo "1) Smart mode - Only cancel out-of-range/excess orders (default)"
+    echo "2) Clean slate - Cancel ALL orders and place fresh ones"
+    
+    # Map current value to choice
+    local update_mode_num=1
+    if [[ "$current_cancel_all_on_grid_update" == "true" ]]; then
+        update_mode_num=2
+    fi
+    
+    echo -e "${YELLOW}Current: option ${update_mode_num}${NC}"
+    read -p "Choose grid update behavior (1-2) [${update_mode_num}]: " update_mode_choice
+    update_mode_choice=${update_mode_choice:-$update_mode_num}
+    
+    if [ "$update_mode_choice" = "2" ]; then
+        cancel_all_on_grid_update=true
+    else
+        cancel_all_on_grid_update=false
+    fi
+    
     # Create temporary config file with new values
     local temp_config="${config_file}.tmp"
     
@@ -902,6 +966,8 @@ bot_config:
   outlier_filter_reference: ${outlier_filter_reference}
   out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
   out_of_range_price_mode: ${out_of_range_price_mode}
+  strict_grid_count: ${strict_grid_count}
+  cancel_all_on_grid_update: ${cancel_all_on_grid_update}
 EOF
     
     # Replace old config with new
@@ -1115,6 +1181,32 @@ create_new_instance() {
     inventory_tolerance=${inventory_tolerance:-0.1}
     
     echo
+    echo -e "${YELLOW}How should the bot manage order count?${NC}"
+    echo "1) Strict count - Always maintain exactly grid_levels orders (recommended)"
+    echo "2) Allow accumulation - Orders can build up over time"
+    read -p "Choose order management mode (1-2, default: 1): " grid_mode_choice
+    grid_mode_choice=${grid_mode_choice:-1}
+    
+    if [ "$grid_mode_choice" = "2" ]; then
+        strict_grid_count=false
+    else
+        strict_grid_count=true
+    fi
+    
+    echo
+    echo -e "${YELLOW}When grid updates, should all orders be cancelled?${NC}"
+    echo "1) Smart mode - Only cancel out-of-range/excess orders (default)"
+    echo "2) Clean slate - Cancel ALL orders and place fresh ones"
+    read -p "Choose grid update behavior (1-2, default: 1): " update_mode_choice
+    update_mode_choice=${update_mode_choice:-1}
+    
+    if [ "$update_mode_choice" = "2" ]; then
+        cancel_all_on_grid_update=true
+    else
+        cancel_all_on_grid_update=false
+    fi
+    
+    echo
     echo -e "${YELLOW}When ALL orders are filtered out, should the bot use fallback pricing?${NC}"
     echo -e "${YELLOW}If 'n', bot stops placing orders when orderbook is all outliers${NC}"
     # Show current value
@@ -1264,6 +1356,8 @@ bot_config:
   outlier_filter_reference: ${outlier_filter_reference}
   out_of_range_pricing_fallback: ${out_of_range_pricing_fallback}
   out_of_range_price_mode: ${out_of_range_price_mode}
+  strict_grid_count: ${strict_grid_count}
+  cancel_all_on_grid_update: ${cancel_all_on_grid_update}
 EOF
     
     # Create docker-compose file for this instance
@@ -1314,6 +1408,15 @@ EOF
     if [ "$max_deviation" != "0" ]; then
         local deviation_pct=$(echo "scale=1; $max_deviation * 100" | bc)
         echo "• Filter out orders more than ${deviation_pct}% from market price"
+    fi
+    
+    # Show grid management behavior
+    if [ "$strict_grid_count" = "true" ]; then
+        echo "• Maintain exactly ${grid_levels} orders per side (no accumulation)"
+    fi
+    
+    if [ "$cancel_all_on_grid_update" = "true" ]; then
+        echo "• Cancel all orders when grid updates (clean slate mode)"
     fi
     
     echo

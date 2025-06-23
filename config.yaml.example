@@ -48,3 +48,13 @@ bot_config:
   # nearest_ask = Use nearest valid ask (conservative for selling)
   # auto = Try all price sources in order (VWAP → ticker → last price)
   out_of_range_price_mode: vwap
+  
+  # Grid order count management
+  # When true: Maintains exactly grid_levels orders per side, cancels excess
+  # When false: Allows order accumulation over time (not recommended)
+  strict_grid_count: true
+  
+  # Grid update behavior
+  # When true: Cancels ALL orders when grid updates (clean slate approach)
+  # When false: Only cancels out-of-range and excess orders (default)
+  cancel_all_on_grid_update: false

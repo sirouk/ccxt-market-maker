@@ -66,6 +66,12 @@ That's it! The bot handles all the complexity automatically.
 - Tracks order settlement properly
 - Restarts from where it left off
 
+#### 📊 **Grid Order Management**
+- Maintains exact number of configured orders (no accumulation)
+- Cancels excess orders automatically
+- Keeps orders closest to market price
+- Optional: Cancel all orders on grid updates
+
 #### 💰 **Balance Change Detection** 
 - Automatically detects deposits/withdrawals
 - Updates orders when you add funds (1% change)
@@ -178,6 +184,8 @@ grid_spread: 0.002          # Tighter spreads
 | `outlier_filter_reference` | Price reference source | vwap |
 | `out_of_range_pricing_fallback` | Enable fallback pricing | true |
 | `out_of_range_price_mode` | Fallback price source | vwap |
+| `strict_grid_count` | Maintain exact order count | true |
+| `cancel_all_on_grid_update` | Cancel all orders on update | false |
 
 ### Grid Stability Details
 
@@ -189,6 +197,22 @@ This means:
 - Tight grids (0.2% spread) → Updates at 0.1% price moves
 - Normal grids (1% spread) → Updates at 0.5% price moves
 - Wide grids (2% spread) → Updates at 1% price moves
+
+### Grid Order Management
+
+The bot prevents order accumulation over time:
+
+**Default Behavior (`strict_grid_count: true`)**:
+- Maintains exactly `grid_levels` orders per side
+- When grid updates, keeps orders closest to market
+- Cancels excess orders automatically
+- Example: With `grid_levels: 3`, always have ≤3 buy and ≤3 sell orders
+
+**Clean Slate Mode (`cancel_all_on_grid_update: true`)**:
+- Cancels ALL orders when grid updates
+- Places fresh orders at new grid levels
+- Simpler but more API calls
+- Good for volatile markets
 
 ### Outlier Filtering Deep Dive
 

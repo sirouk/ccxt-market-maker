@@ -26,7 +26,9 @@ class Config:
         max_orderbook_deviation: Decimal = Decimal('0.1'),  # Default 10% max deviation
         outlier_filter_reference: str = 'vwap',  # Reference price for outlier filtering
         out_of_range_pricing_fallback: bool = True,  # Enable fallback pricing when out of range
-        out_of_range_price_mode: str = 'vwap'  # Price mode when all orders filtered out
+        out_of_range_price_mode: str = 'vwap',  # Price mode when all orders filtered out
+        strict_grid_count: bool = True,  # Strictly maintain grid_levels count (cancel excess orders)
+        cancel_all_on_grid_update: bool = False  # Cancel ALL orders when grid updates (clean slate)
     ):
         self.api_key = api_key
         self.api_secret = api_secret
@@ -45,6 +47,8 @@ class Config:
         self.outlier_filter_reference = outlier_filter_reference
         self.out_of_range_pricing_fallback = out_of_range_pricing_fallback
         self.out_of_range_price_mode = out_of_range_price_mode
+        self.strict_grid_count = strict_grid_count
+        self.cancel_all_on_grid_update = cancel_all_on_grid_update
 
 
 def load_config_from_yaml() -> Optional[Config]:
@@ -101,7 +105,9 @@ def load_config_from_yaml() -> Optional[Config]:
             max_orderbook_deviation=Decimal(str(bot_config.get('max_orderbook_deviation', '0.1'))),
             outlier_filter_reference=bot_config.get('outlier_filter_reference', 'vwap'),
             out_of_range_pricing_fallback=bot_config.get('out_of_range_pricing_fallback', True),
-            out_of_range_price_mode=bot_config.get('out_of_range_price_mode', 'vwap')
+            out_of_range_price_mode=bot_config.get('out_of_range_price_mode', 'vwap'),
+            strict_grid_count=bot_config.get('strict_grid_count', True),
+            cancel_all_on_grid_update=bot_config.get('cancel_all_on_grid_update', False)
         )
 
     except Exception as e:

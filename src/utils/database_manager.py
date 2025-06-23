@@ -2,7 +2,7 @@ import sqlite3
 import time
 from typing import List, Dict, Optional
 from src.utils.custom_logger import LoggerSetup
-from src.models.types import OrderRecord
+from src.models.types import OrderRecord, TradeData
 
 
 class DatabaseManager:
@@ -77,14 +77,14 @@ class DatabaseManager:
         self.conn.commit()
         self.logger.debug(f"Updated order {order_id} status to {status}")
 
-    def record_trade(self, order_id: str, pair: str, side: str,
-                    price: float, quantity: float) -> None:
+    def record_trade(self, trade: 'TradeData') -> None:
         """Record a trade execution."""
         cursor = self.conn.cursor()
         cursor.execute('''INSERT INTO trades
                          (order_id, pair, side, price, quantity, timestamp)
                          VALUES (?, ?, ?, ?, ?, ?)''',
-                      (order_id, pair, side, price, quantity, int(time.time())))
+                      (trade['orderId'], trade['pair'], trade['side'], 
+                       trade['price'], trade['quantity'], int(time.time())))
         self.conn.commit()
 
     def record_performance(self, base_balance: float, quote_balance: float,

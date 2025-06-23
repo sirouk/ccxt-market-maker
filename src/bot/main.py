@@ -148,13 +148,13 @@ class MarketMakerREST:
                     self.logger.info(f"Using VWAP as base reference for {filter_ref}: {reference_price}")
                 else:
                     # Fallback to ticker mid if no VWAP
-                    if self.ticker_bid > 0 and self.ticker_ask > 0:
+                    if self.ticker_bid and self.ticker_ask and self.ticker_bid > 0 and self.ticker_ask > 0:
                         reference_price = (self.ticker_bid + self.ticker_ask) / Decimal('2')
                         self.logger.warning(f"No VWAP available, using ticker mid for {filter_ref}: {reference_price}")
 
             elif filter_ref == 'ticker_mid':
                 # Use ticker mid-price as reference
-                if self.ticker_bid > 0 and self.ticker_ask > 0:
+                if self.ticker_bid and self.ticker_ask and self.ticker_bid > 0 and self.ticker_ask > 0:
                     reference_price = (self.ticker_bid + self.ticker_ask) / Decimal('2')
                     self.logger.info(f"Using ticker mid-price for outlier filtering: {reference_price}")
 
@@ -170,7 +170,7 @@ class MarketMakerREST:
                 if hasattr(self, 'last_vwap') and self.last_vwap:
                     reference_price = self.last_vwap
                     self.logger.warning(f"Using stored VWAP as fallback for filtering: {reference_price}")
-                elif hasattr(self, 'ticker_bid') and hasattr(self, 'ticker_ask') and self.ticker_bid > 0 and self.ticker_ask > 0:
+                elif hasattr(self, 'ticker_bid') and hasattr(self, 'ticker_ask') and self.ticker_bid and self.ticker_ask and self.ticker_bid > 0 and self.ticker_ask > 0:
                     spread_ratio = self.ticker_ask / self.ticker_bid
                     if spread_ratio < Decimal('10'):  # Only use if spread is reasonable
                         reference_price = (self.ticker_bid + self.ticker_ask) / Decimal('2')
@@ -689,7 +689,7 @@ class MarketMakerREST:
             return []
 
     async def cancel_orders_outside_grid(self, grid_orders: List[Tuple[str, Decimal, Decimal]]) -> None:
-        """Cancel orders that fall outside the acceptable grid range."""
+        """Cancel orders that fall outside the acceptable grid range and maintain grid order count."""
         if not grid_orders:
             return
             
@@ -712,11 +712,21 @@ class MarketMakerREST:
         
         orders_to_cancel = []
         
+        # Group existing orders by side
+        buy_orders = []
+        sell_orders = []
+        
         # Check each existing order
         for order_id, order in list(self.order_manager.my_orders.items()):
             try:
                 order_price = Decimal(order['price'])
                 order_side = order['side']
+                
+                # Track all orders by side for count management
+                if order_side == 'buy':
+                    buy_orders.append((order_id, order_price, order))
+                elif order_side == 'sell':
+                    sell_orders.append((order_id, order_price, order))
                 
                 # Cancel if:
                 # - Buy order is below our minimum acceptable price
@@ -747,17 +757,49 @@ class MarketMakerREST:
                 self.logger.debug(f"Could not parse order price for range check: {e}")
                 continue
         
-        # Cancel orders that are outside acceptable range
+        # IMPORTANT: Cancel excess orders to maintain grid_levels count (if strict_grid_count is enabled)
+        # Sort orders by distance from mid price (keep closest ones)
+        if self.config.strict_grid_count and self.grid_anchor_price:
+            # Sort buy orders by price descending (highest/closest first)
+            buy_orders.sort(key=lambda x: x[1], reverse=True)
+            # Sort sell orders by price ascending (lowest/closest first)  
+            sell_orders.sort(key=lambda x: x[1])
+            
+            # Cancel excess buy orders (keep only grid_levels count)
+            max_buy_orders = len([o for o in grid_orders if o[0] == 'buy'])
+            if len(buy_orders) > max_buy_orders:
+                self.logger.info(f"Found {len(buy_orders)} buy orders, but grid only needs {max_buy_orders}")
+                for i in range(max_buy_orders, len(buy_orders)):
+                    order_id, price, _ = buy_orders[i]
+                    if (order_id, price, 'buy', f"excess buy order beyond grid levels") not in orders_to_cancel:
+                        orders_to_cancel.append((order_id, price, 'buy', f"excess buy order (keeping {max_buy_orders} closest)"))
+            
+            # Cancel excess sell orders (keep only grid_levels count)
+            max_sell_orders = len([o for o in grid_orders if o[0] == 'sell'])
+            if len(sell_orders) > max_sell_orders:
+                self.logger.info(f"Found {len(sell_orders)} sell orders, but grid only needs {max_sell_orders}")
+                for i in range(max_sell_orders, len(sell_orders)):
+                    order_id, price, _ = sell_orders[i]
+                    if (order_id, price, 'sell', f"excess sell order beyond grid levels") not in orders_to_cancel:
+                        orders_to_cancel.append((order_id, price, 'sell', f"excess sell order (keeping {max_sell_orders} closest)"))
+        
+        # Cancel orders that are outside acceptable range or excess
         if orders_to_cancel:
-            self.logger.info(f"Cancelling {len(orders_to_cancel)} orders outside acceptable range")
+            # Remove duplicates by order_id
+            unique_orders_to_cancel = {}
             for order_id, price, side, reason in orders_to_cancel:
+                if order_id not in unique_orders_to_cancel:
+                    unique_orders_to_cancel[order_id] = (price, side, reason)
+            
+            self.logger.info(f"Cancelling {len(unique_orders_to_cancel)} orders (out of range or excess)")
+            for order_id, (price, side, reason) in unique_orders_to_cancel.items():
                 self.logger.debug(f"Cancelling {side} order at {price} (ID: {order_id}): {reason}")
                 try:
                     await self.order_manager.cancel_order(order_id)
                 except Exception as e:
                     self.logger.error(f"Failed to cancel order {order_id}: {e}")
         else:
-            self.logger.debug("All existing orders are within acceptable range")
+            self.logger.debug("All existing orders are within acceptable range and count")
 
     async def verify_order_placement(self, order_id: str, max_retries: int = 3) -> bool:
         """
@@ -951,8 +993,16 @@ class MarketMakerREST:
                     grid_orders = await self.calculate_order_grid()
                     self.logger.debug(f"Generated {len(grid_orders)} potential grid orders")
 
-                    # Cancel orders that are outside the current grid
-                    await self.cancel_orders_outside_grid(grid_orders)
+                    # Cancel orders based on configuration
+                    if hasattr(self.config, 'cancel_all_on_grid_update') and self.config.cancel_all_on_grid_update:
+                        # Cancel ALL orders when grid updates (clean slate approach)
+                        self.logger.info("Grid update: Cancelling all existing orders (cancel_all_on_grid_update=True)")
+                        await self.order_manager.cancel_all_orders()
+                        # Wait a moment for cancellations to process
+                        await asyncio.sleep(2)
+                    else:
+                        # Cancel only orders outside grid or excess orders
+                        await self.cancel_orders_outside_grid(grid_orders)
 
                     placed_orders = 0
                     for side, price, size in grid_orders:
