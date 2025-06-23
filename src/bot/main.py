@@ -1050,10 +1050,11 @@ class MarketMakerREST:
         self.logger.info("Shutting down market maker...")
 
         try:
-            await asyncio.wait_for(self.order_manager.cancel_all_orders(), timeout=30.0)
+            await asyncio.wait_for(self.order_manager.cancel_all_orders(), timeout=290.0)
             self.logger.info("All orders cancelled successfully")
         except asyncio.TimeoutError:
-            self.logger.error("Timeout while cancelling orders")
+            self.logger.error("Timeout while cancelling orders (exceeded 290 seconds)")
+            self.logger.error("Some orders may still be open - check exchange manually!")
         except Exception as e:
             self.logger.error(f"Error during order cancellation: {e}")
 

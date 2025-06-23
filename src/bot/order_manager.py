@@ -237,69 +237,164 @@ class OrderManager:
 
     async def cancel_all_orders(self) -> None:
         """Cancel all open orders for this symbol, fetching fresh data from exchange."""
-        self.logger.info("Fetching all open orders to cancel...")
+        self.logger.info("Starting comprehensive order cancellation...")
         
         try:
-            # Fetch fresh order data from exchange to ensure we don't miss any
-            open_orders = await self.retry_handler.retry_with_backoff(
-                self.exchange.fetch_open_orders,
-                "Fetch all orders for cancellation",
-                self.symbol
-            )
+            all_open_orders = []
+            page = 0
+            limit = 100  # Most exchanges support up to 100-500 per page
             
-            if not open_orders:
+            # Fetch all orders with pagination
+            while True:
+                self.logger.info(f"Fetching open orders page {page + 1}...")
+                try:
+                    # Try fetching with pagination parameters
+                    open_orders = await self.retry_handler.retry_with_backoff(
+                        self.exchange.fetch_open_orders,
+                        f"Fetch orders page {page}",
+                        self.symbol,
+                        None,  # since parameter
+                        limit,  # limit parameter
+                        {'offset': page * limit}  # Additional params for pagination
+                    )
+                except TypeError:
+                    # If exchange doesn't support those parameters, try without
+                    if page == 0:
+                        open_orders = await self.retry_handler.retry_with_backoff(
+                            self.exchange.fetch_open_orders,
+                            "Fetch all orders for cancellation",
+                            self.symbol
+                        )
+                    else:
+                        break  # Can't paginate, work with what we have
+                
+                if not open_orders:
+                    break
+                    
+                all_open_orders.extend(open_orders)
+                self.logger.info(f"Found {len(open_orders)} orders on page {page + 1}")
+                
+                # If we got less than limit, we've reached the end
+                if len(open_orders) < limit:
+                    break
+                    
+                page += 1
+                
+                # Safety check to prevent infinite loops
+                if page > 10:  # Max 1000 orders
+                    self.logger.warning("Reached pagination limit, proceeding with orders found")
+                    break
+            
+            if not all_open_orders:
                 self.logger.info("No open orders found to cancel")
                 return
             
-            self.logger.info(f"Found {len(open_orders)} open orders to cancel")
+            self.logger.info(f"Found total of {len(all_open_orders)} open orders to cancel")
             
-            # Cancel each order
+            # Cancel in batches to avoid rate limits
+            batch_size = 10
             cancelled_count = 0
             failed_count = 0
             
-            for order in open_orders:
-                order_id = str(order['id'])
-                try:
-                    await self.retry_handler.retry_with_backoff(
-                        self.exchange.cancel_order,
-                        f"Cancel order {order_id}",
-                        order_id,
-                        self.symbol
-                    )
-                    cancelled_count += 1
-                    self.logger.debug(f"Cancelled order {order_id}")
-                    
-                    # Update database
-                    self.db.update_order_status(order_id, 'CANCELLED')
-                    
-                except Exception as e:
-                    failed_count += 1
-                    self.logger.error(f"Failed to cancel order {order_id}: {e}")
+            for i in range(0, len(all_open_orders), batch_size):
+                batch = all_open_orders[i:i + batch_size]
+                self.logger.info(f"Cancelling batch {i//batch_size + 1} ({len(batch)} orders)...")
+                
+                # Cancel orders in parallel within batch
+                cancel_tasks = []
+                for order in batch:
+                    order_id = str(order['id'])
+                    cancel_tasks.append(self._cancel_single_order(order_id))
+                
+                # Wait for batch to complete
+                results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
+                
+                # Count results
+                for result in results:
+                    if isinstance(result, Exception):
+                        failed_count += 1
+                    else:
+                        cancelled_count += 1
+                
+                # Small delay between batches to respect rate limits
+                if i + batch_size < len(all_open_orders):
+                    await asyncio.sleep(0.5)
             
-            self.logger.info(f"Cancellation complete: {cancelled_count} cancelled, {failed_count} failed")
+            self.logger.info(f"Initial cancellation complete: {cancelled_count} cancelled, {failed_count} failed")
             
             # Wait for cancellations to process
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
             
-            # Verify all orders are cancelled
-            remaining_orders = await self.retry_handler.retry_with_backoff(
-                self.exchange.fetch_open_orders,
-                "Verify all orders cancelled",
-                self.symbol
-            )
+            # Verify all orders are cancelled (with pagination again)
+            remaining_count = 0
+            verification_attempts = 0
+            max_verification_attempts = 3
             
-            if remaining_orders:
-                self.logger.warning(f"WARNING: {len(remaining_orders)} orders still open after cancellation!")
-                # Try one more time for stubborn orders
-                for order in remaining_orders:
-                    order_id = str(order['id'])
+            while verification_attempts < max_verification_attempts:
+                remaining_orders = []
+                page = 0
+                
+                # Fetch remaining orders with pagination
+                while True:
                     try:
-                        self.logger.info(f"Retry cancelling stubborn order {order_id}")
-                        await self.exchange.cancel_order(order_id, self.symbol)
-                    except Exception as e:
-                        self.logger.error(f"Failed to cancel stubborn order {order_id}: {e}")
-            else:
-                self.logger.info("All orders successfully cancelled")
+                        orders = await self.retry_handler.retry_with_backoff(
+                            self.exchange.fetch_open_orders,
+                            f"Verify orders cancelled page {page}",
+                            self.symbol,
+                            None,
+                            limit,
+                            {'offset': page * limit}
+                        )
+                    except TypeError:
+                        if page == 0:
+                            orders = await self.retry_handler.retry_with_backoff(
+                                self.exchange.fetch_open_orders,
+                                "Verify all orders cancelled",
+                                self.symbol
+                            )
+                        else:
+                            break
+                    
+                    if not orders:
+                        break
+                        
+                    remaining_orders.extend(orders)
+                    
+                    if len(orders) < limit:
+                        break
+                        
+                    page += 1
+                    if page > 10:
+                        break
+                
+                remaining_count = len(remaining_orders)
+                
+                if remaining_count == 0:
+                    self.logger.info("✓ All orders successfully cancelled!")
+                    break
+                
+                self.logger.warning(f"WARNING: {remaining_count} orders still open after cancellation!")
+                verification_attempts += 1
+                
+                if verification_attempts < max_verification_attempts:
+                    self.logger.info(f"Retrying cancellation for {remaining_count} stubborn orders (attempt {verification_attempts}/{max_verification_attempts})...")
+                    
+                    # Cancel remaining orders more aggressively
+                    for order in remaining_orders:
+                        order_id = str(order['id'])
+                        try:
+                            # Direct cancel without retry wrapper for speed
+                            await self.exchange.cancel_order(order_id, self.symbol)
+                            self.logger.debug(f"Force cancelled order {order_id}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to force cancel order {order_id}: {e}")
+                    
+                    # Wait before next verification
+                    await asyncio.sleep(2)
+            
+            if remaining_count > 0:
+                self.logger.error(f"ERROR: Failed to cancel {remaining_count} orders after {max_verification_attempts} attempts!")
+                self.logger.error("Manual intervention may be required to cancel remaining orders.")
             
             # Clear local tracking
             self.my_orders.clear()
@@ -308,6 +403,25 @@ class OrderManager:
             
         except Exception as e:
             self.logger.error(f"Critical error during order cancellation: {e}")
+            self.logger.error("IMPORTANT: Some orders may still be open! Check exchange manually.")
             # Still try to clear local tracking
             self.my_orders.clear()
             self.recently_closed_orders.clear()
+    
+    async def _cancel_single_order(self, order_id: str) -> None:
+        """Cancel a single order and update database."""
+        try:
+            await self.retry_handler.retry_with_backoff(
+                self.exchange.cancel_order,
+                f"Cancel order {order_id}",
+                order_id,
+                self.symbol
+            )
+            self.logger.debug(f"Cancelled order {order_id}")
+            
+            # Update database
+            self.db.update_order_status(order_id, 'CANCELLED')
+            
+        except Exception as e:
+            self.logger.error(f"Failed to cancel order {order_id}: {e}")
+            raise  # Re-raise for proper error counting

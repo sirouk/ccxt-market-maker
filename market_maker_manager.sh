@@ -433,7 +433,7 @@ manage_instance() {
             3)
                 echo -e "${YELLOW}Stopping instance...${NC}"
                 echo -e "${BLUE}The bot will gracefully cancel all open orders before shutting down.${NC}"
-                echo -e "${BLUE}This may take up to 60 seconds...${NC}"
+                echo -e "${BLUE}This may take up to 5 minutes for many orders...${NC}"
                 docker stop "$instance"
                 echo -e "${GREEN}Instance stopped gracefully!${NC}"
                 echo -e "${GREEN}All orders have been cancelled.${NC}"
@@ -1287,7 +1287,7 @@ services:
     restart: on-failure:3
     tty: true
     stdin_open: true
-    stop_grace_period: 60s
+    stop_grace_period: 300s
 EOF
     
     # Start the instance
@@ -1387,7 +1387,7 @@ services:
     restart: on-failure:3
     tty: true
     stdin_open: true
-    stop_grace_period: 60s
+    stop_grace_period: 300s
 EOF
             fi
             
@@ -1428,7 +1428,7 @@ services:
     restart: on-failure:3
     tty: true
     stdin_open: true
-    stop_grace_period: 60s
+    stop_grace_period: 300s
 EOF
             fi
             

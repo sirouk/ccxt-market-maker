@@ -11,8 +11,8 @@ shutdown() {
         # Send SIGTERM to the Python process
         kill -TERM $BOT_PID 2>/dev/null || true
         
-        # Wait for graceful shutdown (up to 60 seconds)
-        timeout=60
+        # Wait for graceful shutdown (up to 300 seconds / 5 minutes)
+        timeout=300
         while [ $timeout -gt 0 ] && kill -0 $BOT_PID 2>/dev/null; do
             sleep 1
             ((timeout--))
